@@ -1,0 +1,477 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Carousel Pill Dispenser</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@500;600&family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+:root {
+  /* layout: one reading column, the 3D stage is the only full-width element; a workshop data sheet */
+  --bg: #eef1f0; --surface: #ffffff; --stage: #dfe5e3; --ink: #16211f; --muted: #586864; --line: #c9d2cf;
+  --accent: #0b6f6a; --accent-ink: #ffffff; --warn: #9a5b00; --ok: #2c6e3f;
+  --display: "Barlow Condensed", "Arial Narrow", sans-serif;
+  --body: "IBM Plex Sans", system-ui, sans-serif;
+  --mono: "IBM Plex Mono", ui-monospace, monospace;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    color-scheme: dark;
+    --bg: #0f1514; --surface: #171f1d; --stage: #1d2725; --ink: #e5ecea; --muted: #94a39f; --line: #2c3835;
+    --accent: #45b8b0; --accent-ink: #06201e; --warn: #e0a84a; --ok: #7cc490;
+  }
+}
+:root[data-theme="dark"] {
+  color-scheme: dark;
+  --bg: #0f1514; --surface: #171f1d; --stage: #1d2725; --ink: #e5ecea; --muted: #94a39f; --line: #2c3835;
+  --accent: #45b8b0; --accent-ink: #06201e; --warn: #e0a84a; --ok: #7cc490;
+}
+* { box-sizing: border-box; }
+html { -webkit-text-size-adjust: 100%; }
+body { margin: 0; background: var(--bg); color: var(--ink); font: 16px/1.55 var(--body); }
+main { max-width: 860px; margin: 0 auto; padding: 28px 18px 64px; display: flex; flex-direction: column; gap: 34px; }
+h1, h2 { font-family: var(--display); font-weight: 600; letter-spacing: .01em; text-wrap: balance; margin: 0; }
+h1 { font-size: clamp(2.3rem, 7vw, 3.4rem); line-height: 1; }
+h2 { font-size: 1.65rem; line-height: 1.1; }
+p { margin: 0; max-width: 66ch; }
+header { display: flex; flex-direction: column; gap: 12px; }
+.status { align-self: flex-start; font: 500 .8rem/1 var(--mono); color: var(--warn); border: 1px solid currentColor; border-radius: 3px; padding: 6px 8px; }
+.lede { font-size: 1.1rem; color: var(--muted); }
+section { display: flex; flex-direction: column; gap: 14px; }
+
+.viewer { background: var(--stage); border: 1px solid var(--line); border-radius: 6px; overflow: hidden; }
+.stagebox { position: relative; aspect-ratio: 4 / 3; max-height: 620px; width: 100%; }
+.stagebox canvas, .stagebox img { position: absolute; inset: 0; width: 100%; height: 100%; display: block; }
+.stagebox img { object-fit: contain; padding: 12px; }
+.stagebox canvas { touch-action: pan-y; cursor: grab; opacity: 0; }
+.stagebox.live canvas { opacity: 1; }
+.stagebox.live img { display: none; }
+.zoom { position: absolute; right: 10px; top: 10px; display: flex; flex-direction: column; gap: 6px; }
+.controls { display: flex; flex-wrap: wrap; gap: 8px; padding: 10px; border-top: 1px solid var(--line); background: var(--surface); }
+button { font: 500 .92rem/1 var(--body); color: var(--ink); background: var(--surface); border: 1px solid var(--line); border-radius: 4px; padding: 10px 12px; cursor: pointer; }
+button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+button[aria-pressed="true"] { background: var(--ink); color: var(--bg); border-color: var(--ink); }
+button.primary { background: var(--accent); color: var(--accent-ink); border-color: var(--accent); }
+button:disabled { opacity: .55; cursor: default; }
+.zoom button { width: 38px; height: 38px; padding: 0; font-size: 1.2rem; }
+.hint { font-size: .85rem; color: var(--muted); padding: 0 10px 10px; background: var(--surface); display: flex; flex-wrap: wrap; gap: 4px 14px; }
+.chip { display: inline-flex; align-items: center; gap: 6px; }
+.chip i { width: 10px; height: 10px; border-radius: 2px; display: inline-block; }
+
+.specs { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 1px; background: var(--line); border: 1px solid var(--line); border-radius: 6px; overflow: hidden; margin: 0; }
+.specs div { background: var(--surface); padding: 12px 14px; }
+.specs dt { font: 500 .72rem/1.2 var(--mono); color: var(--muted); text-transform: uppercase; letter-spacing: .06em; }
+.specs dd { margin: 4px 0 0; font: 600 1.35rem/1.15 var(--display); font-variant-numeric: tabular-nums; }
+.specs dd small { font: 400 .8rem var(--body); color: var(--muted); display: block; }
+
+ol.steps { margin: 0; padding: 0; list-style: none; counter-reset: s; display: grid; gap: 10px; }
+ol.steps li { counter-increment: s; display: grid; grid-template-columns: 2.2rem 1fr; gap: 4px 10px; background: var(--surface); border: 1px solid var(--line); border-radius: 6px; padding: 12px 14px; }
+ol.steps li::before { content: counter(s); font: 600 1.5rem/1 var(--display); color: var(--accent); grid-row: span 2; }
+ol.steps b { font-weight: 600; }
+ol.steps span { color: var(--muted); grid-column: 2; }
+
+.tablewrap { overflow-x: auto; border: 1px solid var(--line); border-radius: 6px; background: var(--surface); }
+table { border-collapse: collapse; width: 100%; font-size: .93rem; font-variant-numeric: tabular-nums; }
+th, td { text-align: left; padding: 9px 12px; border-bottom: 1px solid var(--line); vertical-align: top; }
+th { font: 500 .72rem/1.2 var(--mono); color: var(--muted); text-transform: uppercase; letter-spacing: .06em; white-space: nowrap; }
+tr:last-child td { border-bottom: 0; }
+td.n { white-space: nowrap; }
+a { color: var(--accent); text-underline-offset: 2px; }
+code, pre { font-family: var(--mono); font-size: .86rem; }
+pre { margin: 0; padding: 12px 14px; background: var(--surface); border: 1px solid var(--line); border-radius: 6px; overflow-x: auto; line-height: 1.5; }
+.two { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 14px; }
+.card { background: var(--surface); border: 1px solid var(--line); border-radius: 6px; padding: 14px 16px; display: flex; flex-direction: column; gap: 8px; }
+.card h3 { margin: 0; font: 600 1.15rem/1.2 var(--display); letter-spacing: .02em; }
+.card ul { margin: 0; padding-left: 1.1rem; display: grid; gap: 5px; }
+.card.done h3 { color: var(--ok); } .card.open h3 { color: var(--warn); }
+.note { color: var(--muted); font-size: .92rem; }
+@media (prefers-reduced-motion: reduce) { * { scroll-behavior: auto; } }
+</style>
+</head>
+<body>
+<main>
+<header>
+  <span class="status">Design rev 0.1 · checked in CAD · not yet printed</span>
+  <h1>Carousel pill dispenser</h1>
+  <p class="lede">Ten passive modules on a turntable, one drive unit in the base, a REST API over Wi-Fi. Add a module by printing it. The motors and electronics stay the same, and they plug together without soldering.</p>
+</header>
+
+<section aria-label="3D model">
+  <div class="viewer">
+    <div class="stagebox" id="stagebox">
+      <img src="__POSTER__" alt="Render of the dispenser: round base, ten wedge-shaped modules on a carousel, servo station and cup at the front.">
+      <canvas id="stage" aria-label="Interactive 3D model of the dispenser"></canvas>
+      <div class="zoom"><button type="button" id="zin" aria-label="Zoom in">+</button><button type="button" id="zout" aria-label="Zoom out">−</button></div>
+    </div>
+    <div class="controls">
+      <button type="button" class="primary" id="bDose">Run a dose</button>
+      <button type="button" id="bCut" aria-pressed="false">Cutaway</button>
+      <button type="button" id="bExp" aria-pressed="false">Explode</button>
+      <button type="button" id="bSee" aria-pressed="false">See-through modules</button>
+      <button type="button" id="bLid" aria-pressed="true">Lids</button>
+    </div>
+    <div class="hint">
+      <span>Drag to turn, pinch or +/− to zoom.</span>
+      <span class="chip"><i style="background:#f08a2e"></i>roller</span>
+      <span class="chip"><i style="background:#58a567"></i>gate; roller and gate are the pill-specific pair</span>
+      <span class="chip"><i style="background:#7fb0d8"></i>module</span>
+      <span class="chip"><i style="background:#d9483b"></i>drive dog, pinion</span>
+      <span class="chip"><i style="background:#e9c84a"></i>chute</span>
+      <span class="chip"><i style="background:#26282c"></i>light barriers</span>
+    </div>
+  </div>
+</section>
+
+<dl class="specs">
+  <div><dt>Places</dt><dd>10<small>6 modules leave 4 spare</small></dd></div>
+  <div><dt>Storage</dt><dd>102 ml<small>per module</small></dd></div>
+  <div><dt>Pill size</dt><dd>up to 30 × 12.5 mm<small>one roller and gate per pill type</small></dd></div>
+  <div><dt>Drive</dt><dd>1 stepper + 1 servo<small>for all modules</small></dd></div>
+  <div><dt>Controller</dt><dd>XIAO ESP32-C6<small>5 V from USB-C, no soldering</small></dd></div>
+  <div><dt>Size</dt><dd>212 × 250 × 179 mm<small>largest print 212 mm</small></dd></div>
+</dl>
+
+<section>
+  <h2>How one dose happens</h2>
+  <ol class="steps">
+    <li><b>The carousel brings the module to the station.</b><span>A 28BYJ-48 stepper turns the plate through a 4:1 gear. A flag under the hub passes through a light barrier once per turn. That marks the home position, and the firmware re-checks it every time the flag passes.</span></li>
+    <li><b>The roller meets the drive.</b><span>Each roller ends in a flat tooth. It slides over two prongs on the servo as the module arrives. Nothing latches, so modules stay free of motors, wires and screws.</span></li>
+    <li><b>The servo turns the roller 145 degrees.</b><span>The pocket carries exactly one pill from the hopper round to the outlet. The housing covers the pocket on the way, so the hopper is never open to the outlet.</span></li>
+    <li><b>The pill is counted on its way to the cup.</b><span>It slides down a V-shaped chute through a second light barrier. No pill seen: the firmware rocks the roller, retries, then reports the module as empty or jammed.</span></li>
+  </ol>
+</section>
+
+<section>
+  <h2>How one pill is separated</h2>
+  <p>A roof beam covers the roller. Pills run down a flank on the open side and roll sideways under the roof, into a gap that ends at a wall. The pocket is parked directly in front of that wall.</p>
+  <ol class="steps">
+    <li><b>The roller is a cone.</b><span>Eight degrees, small end towards the centre, pocket at the small end. A pill lying beside the pocket sits on a slope. Each time the roller turns under it, it slides, and a sliding pill drifts downhill to the pocket.</span></li>
+    <li><b>A gate keeps pills lying flat.</b><span>It hangs under the roof and leaves a gap 1.4 to 2 mm higher than one pill. Pills arrive one layer deep. A long pill cannot stand on end in the pocket: a 30 mm softgel would need 30 mm of height and finds 27.7.</span></li>
+    <li><b>The rear edge of the pocket is sloped.</b><span>A pill that hangs only partly in the pocket is lifted back out when the roller turns, instead of being pinched against the wall.</span></li>
+    <li><b>The roller rocks before every stroke.</b><span>A short turn forward and back pushes the waiting pills square against the wall, where the next one drops in.</span></li>
+  </ol>
+</section>
+
+<section>
+  <h2>Rollers and gates</h2>
+  <p>A pocket meters reliably only when it fits the pill, and the gate has to match. Five pairs are included. For anything else, <code>make_roller.py</code> takes the measured length, width and thickness and writes both STL files.</p>
+  <div class="tablewrap"><table>
+    <tr><th>Pair</th><th>For</th><th>Pocket</th><th>Gap</th></tr>
+    <tr><td class="n">S_tab6</td><td>round tablets about 6 × 3 mm</td><td class="n">7.2 round, 3.5 deep</td><td class="n">4.4</td></tr>
+    <tr><td class="n">M_tab10</td><td>round tablets about 10 × 5 mm</td><td class="n">11.2 round, 5.5 deep</td><td class="n">6.4</td></tr>
+    <tr><td class="n">L_cap0</td><td>capsules size 0, oblong tablets about 21 × 7.5 mm</td><td class="n">23.5 × 8.5, 8.4 deep</td><td class="n">9.5</td></tr>
+    <tr><td class="n">L_cap00</td><td>capsules size 00</td><td class="n">25.3 × 9.4, 9.3 deep</td><td class="n">10.4</td></tr>
+    <tr><td class="n">XL_soft</td><td>large softgels up to 30 × 12.5 mm</td><td class="n">31.8 × 13.3, 13.2 deep</td><td class="n">14.5</td></tr>
+  </table></div>
+  <p class="note">Each pair is two files, <code>roller_…</code> and <code>gate_…</code>. The gate's tab sits in a groove of the roller, so both go into the module together and one piece of filament holds them.</p>
+</section>
+
+<section>
+  <h2>Print list</h2>
+  <p>All parts are exported in print orientation and need no supports. PETG, 0.2 mm layers, 3 walls, 15 % infill. A full set with 10 modules takes about 1.6 kg; base, carousel and station alone about 0.45 kg.</p>
+  <div class="tablewrap"><table>
+    <tr><th>Part</th><th>Qty</th><th>Filament</th><th>Note</th></tr>
+    <tr><td class="n">base_tub</td><td>1</td><td class="n">~240 g</td><td>208 mm across</td></tr>
+    <tr><td class="n">carousel</td><td>1</td><td class="n">~110 g</td><td>212 mm, printed upside down</td></tr>
+    <tr><td class="n">tower</td><td>1</td><td class="n">~60 g</td><td>upright</td></tr>
+    <tr><td class="n">chute, cup, pinion, drive_dog, hub_cap</td><td>1 each</td><td class="n">~40 g</td><td>chute on its side</td></tr>
+    <tr><td class="n">module_body</td><td>per module</td><td class="n">~80 g</td><td>rim on the bed, brim</td></tr>
+    <tr><td class="n">module_lid</td><td>per module</td><td class="n">~10 g</td><td></td></tr>
+    <tr><td class="n">roller_…</td><td>per module</td><td class="n">~17 g</td><td>standing on the small end</td></tr>
+    <tr><td class="n">gate_…</td><td>per module</td><td class="n">~5 g</td><td>flat</td></tr>
+  </table></div>
+</section>
+
+<section>
+  <h2>Buy list</h2>
+  <div class="two">
+    <div class="card"><h3>Electronics, all plug-in</h3><ul>
+      <li><a href="https://www.berrybase.de/seeed-xiao-esp32-c6-wi-fi-6-ble-5.0-zigbee-thread-512kb-sram-4mb-flash-uart-spi-risc-v-019f466b67fa700690e84a8dff9cbf19">Seeed Studio XIAO ESP32-C6 with pre-soldered headers</a></li>
+      <li><a href="https://www.berrybase.de/28byj-48-schrittmotor-5v-dc-uln2003a-treiberplatine">28BYJ-48 stepper, 5 V, with ULN2003 board</a></li>
+      <li><a href="https://funduinoshop.com/en/electronic-modules/electric-motors-and-accessories/elektromotoren/servo-motors/mg90s-metal-gear-micro-servo">MG90S micro servo, 180°</a></li>
+      <li><a href="https://opencircuit.shop/product/ir-break-beam-sensors-premium-wire-header-ends">2 IR break-beam sensor pairs, 3 mm LED type, wires with header ends</a> (Adafruit 2167)</li>
+      <li><a href="https://www.berrybase.de/en/mini-breadboard-with-170-contacts">170-point breadboard</a></li>
+      <li><a href="https://www.berrybase.de/bauelemente/prototyping/">Jumper wires, male-male and male-female</a></li>
+      <li><a href="https://www.berrybase.de/offizielles-raspberry-pi-usb-c-netzteil-5-1v-3-0a-eu-schwarz">USB-C supply 5.1 V / 3 A with fixed cable</a></li>
+    </ul></div>
+    <div class="card"><h3>Hardware</h3><ul>
+      <li>Hex bolt M8 × 80, washer, self-locking nut (hardware store)</li>
+      <li><a href="https://www.ebay.de/itm/261993530414">2 ball bearings 608</a></li>
+      <li>2 screws <a href="https://accu-components.com/de/metrische-zylinderkopfschrauben/3819-SSCF-M3-10-A2">M3 × 10</a>, 4 screws <a href="https://accu-components.com/de/metrische-zylinderkopfschrauben/3820-SSCF-M3-12-A2">M3 × 12</a></li>
+      <li>1.75 mm filament, 60 mm per module, as roller keeper pin</li>
+      <li>Optional: push button, buzzer, rubber feet</li>
+    </ul></div>
+  </div>
+</section>
+
+<section>
+  <h2>Wiring</h2>
+  <p>Nothing is soldered and there are no loose resistors or capacitors. The XIAO sits on the breadboard; four free rows serve as rails for 5 V, 3.3 V and GND.</p>
+  <div class="tablewrap"><table>
+    <tr><th>XIAO pin</th><th>Goes to</th></tr>
+    <tr><td class="n">5V</td><td>ULN2003 +, servo red</td></tr>
+    <tr><td class="n">GND</td><td>ULN2003 −, servo brown, black wire of all four light-barrier halves</td></tr>
+    <tr><td class="n">3V3</td><td>red wire of both receivers, red wire of the home emitter</td></tr>
+    <tr><td class="n">D0</td><td>signal wire of the receiver in the chute</td></tr>
+    <tr><td class="n">D1</td><td>signal wire of the receiver under the carousel</td></tr>
+    <tr><td class="n">D4</td><td>red wire of the emitter in the chute</td></tr>
+    <tr><td class="n">D3</td><td>servo orange</td></tr>
+    <tr><td class="n">D7 D8 D9 D10</td><td>ULN2003 IN1 IN2 IN3 IN4</td></tr>
+    <tr><td class="n">D2, D6</td><td>optional button to GND, optional buzzer</td></tr>
+  </table></div>
+  <p class="note">The emitter in the chute runs from pin D4 so the firmware can switch it off and on before every stroke. If the receiver does not follow, a plug is loose or the chute is blocked, and no pill is released.</p>
+</section>
+
+<section>
+  <h2>API for the app</h2>
+  <p>JSON over HTTP at <code>http://pilldispenser.local/api/v1</code>, found by mDNS as <code>_pilldispenser._tcp</code>. A unique <code>request_id</code> makes retries safe: the same id never dispenses twice.</p>
+<pre>POST /dispense   {"request_id":"morning-2026-11-12",
+                  "items":[{"slot":1,"count":1},{"slot":5,"count":2}]}
+GET  /jobs/17    per item: dispensed, missed
+GET  /events?since=42      job_done, slot_empty, low_stock, double …
+PUT  /slots/3    {"name":"Magnesium","count":60,"low":8}
+POST /schedules  {"time":"07:30","days":[1,2,3,4,5],"mode":"confirm",
+                  "items":[{"slot":1,"count":1}]}
+POST /present    {"slot":4}        turn a module to the refill position
+PUT  /settings   {"webhook_url":"http://…"}   push events to a backend</pre>
+  <p class="note">Schedules run on the device with NTP time, so doses do not depend on the app being online. <code>dispensed</code> is what the light barrier counted, not what was asked for.</p>
+</section>
+
+<section>
+  <h2>What stands behind this</h2>
+  <div class="two">
+    <div class="card done"><h3>Checked</h3><ul>
+      <li>No part touches another through a full carousel turn and through the servo stroke.</li>
+      <li>The drive takes the roller along after 4.8° of play, both ways.</li>
+      <li>A 30 × 12.5 mm softgel, a size 0 capsule and a 6 × 3 mm tablet stay enclosed during the stroke and have a free path into the chute.</li>
+      <li>A second pill fits under the gate lying on the full pocket, and no longer fits 2.5 mm higher.</li>
+      <li>For all five pairs the pocket is closed to the hopper before it opens to the outlet.</li>
+      <li>All 20 STL files are closed meshes.</li>
+      <li>Firmware logic in a host simulation: homing with either sensor polarity, slot moves, lost-step recovery, empty module, repeated request, double pill, unplugged receiver or emitter.</li>
+    </ul></div>
+    <div class="card open"><h3>Not checked</h3><ul>
+      <li>Nothing has been printed or run on hardware. Expect a tuning round on fits.</li>
+      <li>The firmware was not compiled for the ESP32 here; it passed a syntax check with stand-in headers.</li>
+      <li>How real pills behave. That they drift down the cone and are lifted by the sloped pocket edge is reasoned from geometry and friction, not measured. Sticky softgels and chipped tablets can still jam.</li>
+      <li>The sensor mounts assume housings of 20 × 10 × 8 mm. Compare one with the cradle before printing the base.</li>
+      <li>This is a hobby device, not a medical product. It can miscount.</li>
+    </ul></div>
+  </div>
+</section>
+</main>
+
+<script type="application/json" id="mesh-data">__DATA__</script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+<script>
+(function () {
+  var box = document.getElementById('stagebox'), canvas = document.getElementById('stage');
+  if (!window.THREE) return;                       // library blocked: the still image stays
+  var D = JSON.parse(document.getElementById('mesh-data').textContent), dim = D.dims;
+  var renderer;
+  try { renderer = new THREE.WebGLRenderer({ canvas: canvas, antialias: true }); } catch (e) { return; }
+  renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
+  var scene = new THREE.Scene();
+  var camera = new THREE.PerspectiveCamera(30, 4 / 3, 20, 4000);
+  camera.up.set(0, 0, 1);
+  scene.add(new THREE.HemisphereLight(0xffffff, 0x556066, 0.95));
+  var sun = new THREE.DirectionalLight(0xffffff, 0.75); sun.position.set(250, -350, 600); scene.add(sun);
+  var fill = new THREE.DirectionalLight(0xffffff, 0.25); fill.position.set(-400, 300, 200); scene.add(fill);
+
+  function bytes(s) { var b = atob(s), u = new Uint8Array(b.length); for (var i = 0; i < b.length; i++) u[i] = b.charCodeAt(i); return u; }
+  var geoCache = {};
+  function geo(name) {
+    if (geoCache[name]) return geoCache[name];
+    var p = D.parts[name], q = new Int16Array(bytes(p.v).buffer), pos = new Float32Array(q.length);
+    for (var i = 0; i < q.length; i++) pos[i] = q[i] / D.scale;
+    var g = new THREE.BufferGeometry();
+    g.setAttribute('position', new THREE.BufferAttribute(pos, 3));
+    g.setIndex(new THREE.BufferAttribute(new Uint16Array(bytes(p.i).buffer), 1));
+    return (geoCache[name] = g);
+  }
+  var mats = {};
+  function mat(key, color) {
+    if (!mats[key]) mats[key] = new THREE.MeshStandardMaterial({ color: color, flatShading: true, roughness: 0.78, metalness: 0.04, side: THREE.DoubleSide });
+    return mats[key];
+  }
+  function mesh(name, key, color) { return new THREE.Mesh(geo(name), mat(key, color)); }
+
+  // ---- static parts
+  var tub = mesh('tub', 'base', 0x5e6a75), chute = mesh('chute', 'chute', 0xe9c84a), cup = mesh('cup', 'cup', 0xf5f5f2);
+  var towerG = new THREE.Group();
+  towerG.add(mesh('tower', 'base', 0x5e6a75), mesh('servo', 'servo', 0x2f55c8));
+  var dogG = new THREE.Group(); dogG.position.set(0, 0, dim.zAxis);
+  var dog = mesh('dog', 'red', 0xd9483b); dog.position.set(0, 0, -dim.zAxis); dogG.add(dog); towerG.add(dogG);
+  var pinion = mesh('pinion', 'red', 0xd9483b); pinion.position.set(-dim.gearC, 0, dim.motorM + 1.5);
+  var stepper = mesh('stepper', 'motor', 0x9aa13a), axle = mesh('axle', 'steel', 0x9da3a8);
+  var hubcap = mesh('hubcap', 'base', 0x5e6a75); hubcap.position.set(0, 0, dim.zPlateTop + 10.6);
+  var sensors = mesh('sensors', 'sensor', 0x26282c);
+  scene.add(tub, chute, cup, towerG, pinion, stepper, axle, hubcap, sensors);
+
+  // ---- carousel with modules
+  var carG = new THREE.Group(); scene.add(carG);
+  var plate = mesh('carousel', 'plate', 0xc9ced3); plate.position.z = dim.zPlateTop; carG.add(plate);
+  var slots = [];
+  for (var i = 0; i < dim.slots; i++) {
+    var sg = new THREE.Group(); sg.rotation.z = i * 2 * Math.PI / dim.slots; carG.add(sg);
+    var m = mesh('module', 'module', 0x7fb0d8), lid = mesh('lid', 'lid', 0xeef0f2);
+    var kind = D.rollers[i % D.rollers.length];
+    var pivot = new THREE.Group(), rol = mesh('roller_' + kind, 'roller', 0xf08a2e);
+    rol.position.x = dim.xBody0; pivot.add(rol);
+    var gate = mesh('gate_' + kind, 'gate', 0x58a567);
+    sg.add(m, lid, pivot, gate);
+    slots.push({ g: sg, m: m, lid: lid, pivot: pivot, gate: gate, kind: kind });
+  }
+
+  // ---- state
+  var st = { car: 0, roll: 0, explode: 0, cut: false, see: false, lids: true };
+  var clip = new THREE.Plane(new THREE.Vector3(0, -1, 0), 0);      // the cutaway keeps the side the roller turns to
+  function apply() {
+    var e = st.explode;
+    carG.rotation.z = st.car; carG.position.z = 60 * e;
+    for (var i = 0; i < slots.length; i++) {
+      var s = slots[i];
+      s.m.position.z = dim.zPlateTop + 50 * e;
+      s.lid.position.z = dim.zPlateTop + dim.hopperTop + 95 * e; s.lid.visible = st.lids;
+      s.pivot.position.set(55 * e, 0, dim.zPlateTop + dim.za + 50 * e);
+      s.gate.position.set(28 * e, 0, dim.zPlateTop + 50 * e + 16 * e);
+      s.pivot.rotation.x = (i === st.active) ? st.roll : 0;
+    }
+    dogG.rotation.x = st.roll;
+    towerG.position.x = 55 * e; cup.position.x = 95 * e; chute.position.z = 26 * e; sensors.position.z = 26 * e;
+    hubcap.position.z = dim.zPlateTop + 10.6 + 130 * e; pinion.position.z = dim.motorM + 1.5 + 14 * e;
+    var mm = mats.module; mm.transparent = st.see; mm.opacity = st.see ? 0.3 : 1; mm.depthWrite = !st.see; mm.needsUpdate = true;
+    renderer.clippingPlanes = st.cut ? [clip] : [];
+    dirty = true;
+  }
+
+  // ---- camera
+  var az = 0.98, el = 0.44, dist = 640, target = new THREE.Vector3(14, 0, 80), dirty = true;
+  function place() {
+    var ce = Math.cos(el);
+    camera.position.set(target.x + dist * ce * Math.cos(az), target.y + dist * ce * Math.sin(az), target.z + dist * Math.sin(el));
+    camera.lookAt(target);
+  }
+  function resize() {
+    var w = box.clientWidth, h = box.clientHeight; if (!w || !h) return;
+    renderer.setSize(w, h, false); camera.aspect = w / h; camera.updateProjectionMatrix(); dirty = true;
+  }
+  function stageColor() {
+    var c = getComputedStyle(document.documentElement).getPropertyValue('--stage').trim() || '#dfe5e3';
+    renderer.setClearColor(new THREE.Color(c)); dirty = true;
+  }
+  if (window.ResizeObserver) new ResizeObserver(resize).observe(box); else window.addEventListener('resize', resize);
+  if (window.matchMedia) { var mq = window.matchMedia('(prefers-color-scheme: dark)'); if (mq.addEventListener) mq.addEventListener('change', stageColor); }
+  new MutationObserver(stageColor).observe(document.documentElement, { attributes: true, attributeFilter: ['data-theme'] });
+
+  var ptrs = {}, nPtr = 0, pinch = 0;
+  function zoom(f) { dist = Math.max(260, Math.min(1400, dist * f)); dirty = true; }
+  canvas.addEventListener('pointerdown', function (e) { ptrs[e.pointerId] = { x: e.clientX, y: e.clientY }; nPtr = Object.keys(ptrs).length; pinch = 0; try { canvas.setPointerCapture(e.pointerId); } catch (x) {} });
+  canvas.addEventListener('pointermove', function (e) {
+    var p = ptrs[e.pointerId]; if (!p) return;
+    var dx = e.clientX - p.x, dy = e.clientY - p.y; p.x = e.clientX; p.y = e.clientY;
+    if (nPtr === 1) { az -= dx * 0.008; if (e.pointerType !== 'touch') el = Math.max(-0.25, Math.min(1.45, el + dy * 0.006)); dirty = true; }
+    else if (nPtr === 2) {
+      var k = Object.keys(ptrs), a = ptrs[k[0]], b = ptrs[k[1]], d = Math.hypot(a.x - b.x, a.y - b.y);
+      if (pinch) zoom(pinch / d);
+      pinch = d; el = Math.max(-0.25, Math.min(1.45, el + dy * 0.003)); dirty = true;
+    }
+  });
+  function up(e) { delete ptrs[e.pointerId]; nPtr = Object.keys(ptrs).length; pinch = 0; }
+  canvas.addEventListener('pointerup', up); canvas.addEventListener('pointercancel', up);
+  canvas.addEventListener('wheel', function (e) { if (e.ctrlKey || e.metaKey) { e.preventDefault(); zoom(e.deltaY > 0 ? 1.08 : 0.93); } }, { passive: false });
+  document.getElementById('zin').addEventListener('click', function () { zoom(0.85); });
+  document.getElementById('zout').addEventListener('click', function () { zoom(1.18); });
+
+  // ---- animation helpers
+  var calm = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+  function tween(ms, fn) {
+    return new Promise(function (res) {
+      if (calm) { fn(1); dirty = true; return res(); }
+      var t0 = performance.now();
+      (function step(now) {
+        var t = Math.min(1, (now - t0) / ms); fn(t * t * (3 - 2 * t)); dirty = true;
+        if (t < 1) requestAnimationFrame(step); else res();
+      })(t0);
+    });
+  }
+  function wait(ms) { return new Promise(function (r) { setTimeout(r, calm ? 0 : ms); }); }
+
+  // ---- explode / toggles
+  function toggle(id, key, after) {
+    var b = document.getElementById(id);
+    b.addEventListener('click', function () {
+      if (busy) return;
+      st[key] = !st[key]; b.setAttribute('aria-pressed', String(!!st[key])); if (after) after(st[key]); else apply();
+    });
+  }
+  toggle('bCut', 'cut'); toggle('bSee', 'see'); toggle('bLid', 'lids');
+  var bExp = document.getElementById('bExp'), exploded = false;
+  bExp.addEventListener('click', function () {
+    if (busy) return;
+    exploded = !exploded; bExp.setAttribute('aria-pressed', String(exploded));
+    var from = st.explode, to = exploded ? 1 : 0;
+    tween(700, function (t) { st.explode = from + (to - from) * t; apply(); });
+  });
+
+  // ---- dose demo
+  var busy = false, order = [4, 1, 3, 6], run = 0, pills = [];
+  st.active = -1;
+  var pillMat = new THREE.MeshStandardMaterial({ color: 0xf6f1df, roughness: 0.5, metalness: 0 });
+  function makePill(pk) {
+    var g;
+    if (pk.shape === 'round') { g = new THREE.CylinderGeometry(pk.L / 2, pk.L / 2, pk.T, 28); g.rotateX(Math.PI / 2); }
+    else { g = new THREE.SphereGeometry(0.5, 24, 16); g.scale(pk.L, pk.W, pk.T); }
+    return new THREE.Mesh(g, pillMat);
+  }
+  var bDose = document.getElementById('bDose');
+  bDose.addEventListener('click', async function () {
+    if (busy) return;
+    busy = true; bDose.disabled = true;
+    try {
+      if (st.explode > 0) { exploded = false; bExp.setAttribute('aria-pressed', 'false'); var e0 = st.explode; await tween(500, function (t) { st.explode = e0 * (1 - t); apply(); }); }
+      var idx = order[run++ % order.length], s = slots[idx], pk = D.pockets[s.kind];
+      // 1 carousel: shortest way so that this module stands at the station (+X)
+      var goal = -idx * 2 * Math.PI / dim.slots, c0 = st.car;
+      goal += 2 * Math.PI * Math.round((c0 - goal) / (2 * Math.PI));
+      await tween(600 + 1400 * Math.abs(goal - c0) / Math.PI, function (t) { st.car = c0 + (goal - c0) * t; apply(); });
+      // 2 pill in the pocket, the roller rocks once, then turns to the outlet
+      st.active = idx;
+      var pill = makePill(pk);
+      pill.position.set(dim.xBody0 + pk.pos[0], pk.pos[1], pk.pos[2]);
+      pill.rotation.set(pk.rx, pk.ry, 0);
+      s.pivot.add(pill);
+      var rad = Math.PI / 180, rock = dim.rock * rad, stroke = dim.stroke * rad;
+      await tween(240, function (t) { st.roll = rock * t; apply(); });
+      await tween(240, function (t) { st.roll = rock * (1 - t); apply(); });
+      await wait(150);
+      var released = false, p0 = new THREE.Vector3();
+      await tween(900, function (t) {
+        st.roll = stroke * t; apply();
+        if (!released && t > 0.94) { released = true; scene.attach(pill); p0.copy(pill.position); }
+      });
+      if (!released) { scene.attach(pill); p0.copy(pill.position); }
+      // 3 fall into the V of the chute, slide past the light barrier, drop into the cup
+      var tn = Math.tan(dim.chSlope * rad), zv = function (x) { return dim.chVTop - (x - dim.chX0) * tn; };
+      var x1 = Math.max(dim.chX0 + 3, Math.min(dim.chX1 - 3, p0.x));
+      var p1 = new THREE.Vector3(x1, 0, zv(x1) + pk.T / 2 + 0.6), p2 = new THREE.Vector3(dim.chX1 + 1, 0, zv(dim.chX1 + 1) + pk.T / 2 + 0.6);
+      var n = pills.length % 5, p3 = new THREE.Vector3(dim.cupX0 + 12 + 7 * n, (n % 2 ? 10 : 3), dim.floorT + 2.2 + pk.T / 2);
+      await tween(260, function (t) { pill.position.lerpVectors(p0, p1, t * t); });
+      await tween(360, function (t) { pill.position.lerpVectors(p1, p2, t); });
+      await tween(220, function (t) { pill.position.lerpVectors(p2, p3, t); pill.rotation.set(0, 0, 0); });
+      pills.push(pill);
+      if (pills.length > 5) { var old = pills.shift(); scene.remove(old); }
+      // 4 roller back to its parked position
+      await tween(700, function (t) { st.roll = stroke * (1 - t); apply(); });
+      st.roll = 0; st.active = -1; apply();
+    } finally { busy = false; bDose.disabled = false; }
+  });
+
+  // ---- go
+  stageColor(); resize(); apply();
+  (function loop() { if (dirty) { place(); renderer.render(scene, camera); dirty = false; } requestAnimationFrame(loop); })();
+  box.classList.add('live');
+})();
+</script>
+</body>
+</html>
