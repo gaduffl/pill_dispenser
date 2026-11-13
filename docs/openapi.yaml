@@ -1,0 +1,185 @@
+openapi: 3.0.3
+info:
+  title: Pill dispenser API
+  version: 0.2.0
+  description: |
+    REST API of the modular carousel pill dispenser (firmware 0.2.0).
+    Base URL: http://pilldispenser.local/api/v1 (mDNS service `_pilldispenser._tcp`, TXT `api=/api/v1`).
+
+    Sync model for an app:
+    1. Push the medication plan as schedules (`/schedules`) or call `/dispense` yourself at dose time.
+    2. Read back what really happened: poll `/events?since=<last_seq>` or set `webhook_url` in `/settings`
+       and receive the same events as HTTP POST.
+    3. Keep stock in step with `/slots` (the device decrements `count` for every pill its drop sensor sees).
+
+    Slots are numbered 1..10 as engraved on the carousel.
+servers:
+  - url: http://pilldispenser.local/api/v1
+security:
+  - bearer: []
+components:
+  securitySchemes:
+    bearer:
+      type: http
+      scheme: bearer
+      description: "Only enforced when api_key is set in the settings. The header 'X-API-Key' works too."
+  schemas:
+    Error:
+      type: object
+      properties: { error: { type: string } }
+    Item:
+      type: object
+      required: [slot]
+      properties:
+        slot: { type: integer, minimum: 1, maximum: 10 }
+        count: { type: integer, minimum: 1, default: 1, description: "Upper bound: setting max_per_item (default 12)" }
+        dispensed: { type: integer, readOnly: true, description: Pills the drop sensor counted }
+        missed: { type: integer, readOnly: true, description: Pills that did not come out (empty / jammed) }
+    Job:
+      type: object
+      properties:
+        id: { type: integer }
+        state: { type: string, enum: [queued, running, done, partial, failed, cancelled] }
+        source: { type: string, enum: [api, schedule, button] }
+        request_id: { type: string }
+        items: { type: array, items: { $ref: '#/components/schemas/Item' } }
+        error: { type: string }
+        created: { type: integer, description: Unix time, 0 if the clock is not set }
+        finished: { type: integer }
+    Slot:
+      type: object
+      properties:
+        slot: { type: integer, readOnly: true }
+        name: { type: string, maxLength: 31 }
+        roller: { type: string, maxLength: 15, description: Free text, e.g. XL_soft }
+        count: { type: integer, description: Pills left, -1 = not tracked }
+        low: { type: integer, description: Low-stock threshold }
+        enabled: { type: boolean }
+        low_stock: { type: boolean, readOnly: true }
+    Schedule:
+      type: object
+      required: [time, items]
+      properties:
+        id: { type: integer, readOnly: true }
+        time: { type: string, example: "08:00", description: Local time HH:MM (time zone = setting tz) }
+        days: { type: array, items: { type: integer, minimum: 1, maximum: 7 }, description: "1 = Monday ... 7 = Sunday, default all" }
+        enabled: { type: boolean, default: true }
+        mode:
+          type: string
+          enum: [auto, confirm]
+          default: auto
+          description: auto = dispense at that time. confirm = raise a dose_due event and wait for the button or POST /schedules/{id}/run.
+        label: { type: string, maxLength: 23 }
+        items: { type: array, maxItems: 8, items: { $ref: '#/components/schemas/Item' } }
+        last_run: { type: integer, readOnly: true, description: yyyymmdd of the last run }
+    Event:
+      type: object
+      properties:
+        seq: { type: integer, description: Strictly increasing; resets to 0 on reboot }
+        time: { type: integer }
+        type:
+          type: string
+          description: >
+            boot, homed, resync, job_started, job_done, job_partial, job_failed, slot_empty, double, low_stock,
+            chute_blocked, dose_due, dose_started, dose_missed, button, stop, error
+        message: { type: string }
+        slot: { type: integer }
+        job_id: { type: integer }
+paths:
+  /status:
+    get:
+      summary: Device state
+      responses:
+        '200':
+          description: state is one of boot, idle, homing, moving, dispensing, error
+          content:
+            application/json:
+              example: { device: pilldispenser, firmware: 0.2.0, state: idle, homed: true, slot_at_station: 3, current_job: 0, error: "", slots: 10, time: 1794400000, uptime_s: 532, last_event_seq: 17, due: [], wifi: { ssid: home, ip: 192.168.1.50, rssi: -58 } }
+  /slots:
+    get:
+      summary: All slots
+      responses: { '200': { description: "{ slots: [Slot] }" } }
+  /slots/{slot}:
+    parameters: [ { name: slot, in: path, required: true, schema: { type: integer } } ]
+    get: { summary: One slot, responses: { '200': { description: Slot } } }
+    put:
+      summary: Name a slot, set its stock after refilling, enable / disable it
+      requestBody: { content: { application/json: { schema: { $ref: '#/components/schemas/Slot' }, example: { name: "Magnesium 400", roller: L_cap00, count: 60, low: 8 } } } }
+      responses: { '200': { description: Slot } }
+  /dispense:
+    post:
+      summary: Dispense now
+      description: >
+        Queues a job and returns at once (202). Poll /jobs/{id} or wait for the job_done / job_partial / job_failed event.
+        Send a unique request_id: repeating a request with the same id returns the existing job (200) instead of dispensing twice.
+      requestBody:
+        content:
+          application/json:
+            example: { request_id: "7c1e-morning-2026-11-12", items: [ { slot: 1, count: 1 }, { slot: 5, count: 2 } ] }
+      responses:
+        '202': { description: Job queued, content: { application/json: { schema: { $ref: '#/components/schemas/Job' } } } }
+        '200': { description: Same request_id seen before - existing job returned }
+        '400': { description: Bad request (slot / count out of range, slot disabled) }
+        '503': { description: Job queue full }
+  /jobs:
+    get: { summary: Recent jobs (newest first, kept in RAM), responses: { '200': { description: "{ jobs: [Job] }" } } }
+  /jobs/{id}:
+    parameters: [ { name: id, in: path, required: true, schema: { type: integer } } ]
+    get: { summary: One job with per-item progress, responses: { '200': { description: Job }, '404': { description: Unknown job } } }
+  /jobs/{id}/cancel:
+    parameters: [ { name: id, in: path, required: true, schema: { type: integer } } ]
+    post: { summary: Cancel a queued job, responses: { '200': { description: Job }, '409': { description: Job already running or finished } } }
+  /stop:
+    post: { summary: Stop the running job and cancel everything queued, responses: { '200': { description: ok } } }
+  /events:
+    get:
+      summary: Event log (ring buffer of 48)
+      parameters:
+        - { name: since, in: query, schema: { type: integer }, description: Return events with seq greater than this }
+        - { name: limit, in: query, schema: { type: integer } }
+      responses: { '200': { description: "{ events: [Event], last_seq }" } }
+  /schedules:
+    get: { summary: All schedules, responses: { '200': { description: "{ schedules: [Schedule] }" } } }
+    post:
+      summary: Add a schedule (max 16)
+      requestBody: { content: { application/json: { schema: { $ref: '#/components/schemas/Schedule' }, example: { time: "07:30", days: [1, 2, 3, 4, 5], mode: confirm, label: morning, items: [ { slot: 1, count: 1 }, { slot: 2, count: 1 } ] } } } }
+      responses: { '201': { description: Schedule } }
+  /schedules/{id}:
+    parameters: [ { name: id, in: path, required: true, schema: { type: integer } } ]
+    put: { summary: Change a schedule (send only the fields to change), responses: { '200': { description: Schedule } } }
+    delete: { summary: Delete a schedule, responses: { '200': { description: ok } } }
+  /schedules/{id}/run:
+    parameters: [ { name: id, in: path, required: true, schema: { type: integer } } ]
+    post: { summary: Dispense this schedule now (also confirms a due dose), responses: { '202': { description: Job } } }
+  /present:
+    post:
+      summary: Turn a slot to the refill position
+      requestBody: { content: { application/json: { example: { slot: 4 } } } }
+      responses: { '200': { description: ok }, '503': { description: Busy } }
+  /goto:
+    post: { summary: Turn a slot to the station without dispensing, responses: { '200': { description: ok } } }
+  /home:
+    post: { summary: Home the carousel, responses: { '200': { description: ok } } }
+  /settings:
+    get: { summary: Settings (secrets are not returned), responses: { '200': { description: Settings object } } }
+    put:
+      summary: Change settings (partial)
+      description: >
+        hostname, api_key, tz (POSIX TZ string), webhook_url, car_dir (1 / -1), home_offset, backlash, step_us_cruise,
+        step_us_start, accel_steps, servo_park_us, servo_end_us, servo_over_us, servo_dps, rock_deg, beam_required,
+        retries, max_per_item, refill_slots, due_timeout_min, rehome_jobs, buzzer.
+      responses: { '200': { description: Settings object } }
+  /diag:
+    get: { summary: "Sensor self-test and raw values for setup. beam_ok is true when the receiver in the chute follows its emitter being switched off and on; beam_level_lit / beam_level_dark are the two levels found; home_level is the raw level of the home light barrier, home_active whether the flag is in it; also servo_us, position_steps, steps_per_slot.", responses: { '200': { description: Diagnostics } } }
+  /jog:
+    post: { summary: Calibration - move the carousel by raw half-steps, requestBody: { content: { application/json: { example: { steps: 40 } } } }, responses: { '200': { description: ok } } }
+  /servo:
+    post: { summary: Calibration - move the servo, requestBody: { content: { application/json: { example: { position: park } } } }, responses: { '200': { description: ok } } }
+  /park:
+    post: { summary: Return the roller drive to the pocket-up position, responses: { '200': { description: ok } } }
+  /calibrate/slot1:
+    post: { summary: Calibration - declare that slot 1 is exactly at the station now, responses: { '200': { description: "{ home_offset }" } } }
+  /wifi:
+    post: { summary: Store Wi-Fi credentials and restart, requestBody: { content: { application/json: { example: { ssid: home, password: secret } } } }, responses: { '200': { description: ok } } }
+  /reboot:
+    post: { summary: Restart, responses: { '200': { description: ok } } }
