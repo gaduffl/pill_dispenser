@@ -63,10 +63,9 @@ Electronics. Everything plugs into a small breadboard, no soldering:
 | 2 | IR break-beam sensor pair with 3 mm LEDs, wires with header ends | Adafruit 2167 or the same part elsewhere: two black housings 20 x 10 x 8 mm per pair, 23 cm wires with male pins. One pair reads the index flags, one counts pills. |
 | 1 | Mini breadboard (170 points) | |
 | 1 | Electrolytic capacitor 470 uF, 16 V or more | across 5 V and GND, keeps the servo's start from resetting the ESP32 |
-| 1 | Servo extension lead, 15 cm | the servo cable alone does not reach the breadboard |
-| 1 set | Jumper wires, male-male and female-male | 9 male-male (6 of them short, for links on the board), 6 female-male |
+| 1 set | Jumper wires, male-male and female-male | 9 male-male (6 short ones for links on the board, 3 to extend the servo cable), 6 female-male |
 | 1 | USB-C cable and 5 V supply, 3 A recommended | powers everything; plugs in at the back |
-| opt. | 12 mm panel push button with leads, active buzzer for 3 V (20 mA or less) | button for `confirm` mode, buzzer for reminders |
+| opt. | 12 mm panel push button with leads, active buzzer for 3.3 V (30 mA or less) | button for `confirm` mode, buzzer for reminders |
 
 No resistors: the receivers of the light barriers work with the pull-ups inside the ESP32.
 

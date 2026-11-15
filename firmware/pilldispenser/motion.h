@@ -2,6 +2,9 @@
 #pragma once
 #include "state.h"
 #include "esp_timer.h"
+#ifdef ARDUINO_ARCH_ESP32
+#include "driver/gpio.h"
+#endif
 
 namespace motion {
 
@@ -700,7 +703,13 @@ static void task(void *) {
   pinMode(PIN_BEAM, INPUT_PULLUP);
   pinMode(PIN_BEAM_LED, OUTPUT);
   digitalWrite(PIN_BEAM_LED, LOW);
-  if (PIN_BUZZER >= 0) { pinMode(PIN_BUZZER, OUTPUT); digitalWrite(PIN_BUZZER, LOW); }
+  if (PIN_BUZZER >= 0) {
+    pinMode(PIN_BUZZER, OUTPUT); digitalWrite(PIN_BUZZER, LOW);
+#ifdef ARDUINO_ARCH_ESP32
+    // strongest drive, 40 mA instead of the default 20 mA: the active buzzer hangs on the pin directly
+    gpio_set_drive_capability((gpio_num_t)PIN_BUZZER, GPIO_DRIVE_CAP_3);
+#endif
+  }
   ledcAttach(PIN_SERVO, 50, 14);
   servoWrite(cfg.servo_park_us);
   vTaskDelay(pdMS_TO_TICKS(700));

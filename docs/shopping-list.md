@@ -1,6 +1,7 @@
 # Shopping list
 
-Links and prices as found on 12 November 2026. Prices include VAT unless noted, shipping is extra.
+Links and prices as found on 12 November 2026, for the capacitor, button and buzzer on 15 November 2026.
+Prices include VAT unless noted, shipping is extra.
 Shops were chosen for delivery to Germany; every part is a standard item, so any other source works.
 Links to marketplace listings can go stale; the part names are what matters.
 
@@ -13,21 +14,35 @@ Links to marketplace listings can go stale; the part names are what matters.
 | 1 | MG90S micro servo, metal gear, 180 degrees | [Funduinoshop](https://funduinoshop.com/en/electronic-modules/electric-motors-and-accessories/elektromotoren/servo-motors/mg90s-metal-gear-micro-servo) · [AZ-Delivery](https://az-delivery.de/en/collections/aktoren/products/mg90s-micro-servomotor) | 4.00 EUR at Funduinoshop |
 | 2 | IR break-beam sensor pair, 3 mm LEDs, wires with header ends (Adafruit 2167) | [Opencircuit (NL)](https://opencircuit.shop/product/ir-break-beam-sensors-premium-wire-header-ends) · [Adafruit](https://www.adafruit.com/products/2167), which names Eckstein Komponente as its German distributor · [Melopero (IT)](https://www.melopero.com/en/shop/sensors/infrared/irbreakbeamsensor3mmleds/) | 2.10 EUR each at Opencircuit |
 | 1 | Mini breadboard, 170 contacts | [BerryBase](https://www.berrybase.de/en/mini-breadboard-with-170-contacts) | from 0.99 EUR |
-| 1 | Electrolytic capacitor 470 uF, 16 V or more, radial, up to 10 mm diameter | any electronics shop | not priced |
-| 1 | Servo extension lead, 15 cm (JR / universal plug) | any RC or electronics shop | not priced |
+| 1 | Electrolytic capacitor 470 uF, 16 V or more, radial, up to 10 mm diameter (the BerryBase one is 25 V, 10 x 16 mm) | [BerryBase](https://www.berrybase.de/elektrolytkondensator-470-f-25v-1050c-1-radial-tht) | 0.10 EUR |
 | 1 | Jumper wire set with male-male and female-male wires, 20 cm ("40pin Jumper / Dupont Kabel Set, je 1x F-F / M-M / F-M") | [BerryBase, prototyping category](https://www.berrybase.de/bauelemente/prototyping/) | 4.90 EUR |
 | 1 | USB-C power supply 5.1 V / 3 A with fixed cable (official Raspberry Pi 15 W supply) | [BerryBase](https://www.berrybase.de/offizielles-raspberry-pi-usb-c-netzteil-5-1v-3-0a-eu-schwarz) | 7.90 EUR |
 
-At these prices the electronics come to roughly 32 EUR plus shipping, plus the capacitor and the
-servo extension lead (a few euros together).
+At these prices the electronics come to roughly 32 EUR plus shipping. Everything except the servo
+and the light barriers is listed at BerryBase, so most of it fits in one order.
 
-The capacitor and the extension lead are needed: the capacitor keeps the servo's starting current
-from resetting the ESP32, and the servo cable alone does not reach the breadboard. Jumper wires
-used: 9 male-male (6 of them as short links on the breadboard; pre-cut breadboard jumpers are
-neater there) and 6 female-male, so one set is plenty.
+The capacitor is needed: it keeps the servo's starting current from resetting the ESP32. The servo
+cable does not reach the breadboard on its own, but no extension lead is needed: three male-male
+jumpers from the set plug straight into the servo's plug and bridge the rest. Jumper wires used:
+9 male-male (6 of them as short links on the breadboard, where pre-cut breadboard jumpers are
+neater, and 3 for the servo) and 6 female-male, so one set is plenty.
 
-Optional: a 12 mm panel-mount push button (normally open) with leads, for the hole in the side wall,
-and an active buzzer for 3 V that draws 20 mA or less, since a pin of the XIAO drives it directly.
+Optional, for the hole in the side wall and for reminders:
+
+| Qty | Part | Where | Price seen |
+|---|---|---|---|
+| 1 | Push button, 12 mm panel mount, momentary, 15 cm leads with 2.54 mm Dupont plugs ("KKSB 12mm Druckknopf Momentanschalter") | [BerryBase](https://www.berrybase.de/en/kksb-12mm-druckknopf-momentanschalter-mit-2.54mm-dupont-anschluessen-150mm-kabel) | 4.90 EUR |
+| 1 | Active buzzer (it has its own oscillator), 12 mm, 3-7 V DC, 2.3 kHz, 85 dB, type SG37D2K3 | [BerryBase](https://www.berrybase.de/signalgeber-oe12-0mm-3-7v-dc-2-3khz-85db) | 0.75 EUR |
+
+Any 12 mm push button that closes when pressed works. Its leads have to reach the breadboard at the
+back: the KKSB ones are 15 cm, so extend each with a jumper from the set (male-male if the leads end
+in sockets, female-male if they end in pins).
+
+The buzzer hangs straight on a pin of the XIAO, + to D5. The firmware sets that pin to its strongest
+drive, which Espressif rates at 40 mA (the default is 20 mA), so any active buzzer for 3.3 V that
+draws 30 mA or less works. BerryBase gives 30 mA for this one without saying at which voltage; at
+3.3 V it draws less. Its legs take two female-male jumpers; + is marked on the buzzer and is usually
+the longer leg.
 
 Before ordering the base print: the sensor mounts assume housings of 20 x 10 x 8 mm, the size
 Adafruit gives for part 2167. Clones can differ.

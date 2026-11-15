@@ -267,7 +267,7 @@ def layout_svg():
     callout("R", 200, "stepper 28BYJ-48 under its pinion", (sx, sy + 12))
     callout("R", 320, "ULN2003 driver board", rot(d.ULN_R + 10, 0, d.ULN_ANG))
     callout("R", 396, "hole for the optional push button", (bx - 3, by), 11, "normal", "#555")
-    callout("R", 450, "servo cable + 15 cm extension", (77, 35.5), 12, "bold", CSRV)
+    callout("R", 450, "servo cable + 3 jumpers", (77, 35.5), 12, "bold", CSRV)
     callout("R", 520, "servo cable comes in through this slot", (d.FLAT_X - 1, 29), 11, "normal", CSRV)
     # legend and notes
     ly = H - 74

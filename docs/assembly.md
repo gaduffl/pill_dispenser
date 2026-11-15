@@ -50,13 +50,13 @@ side cutters, double-sided foam tape, and tape or stick-on cable clips for the w
 |---|---|
 | 2 ball bearings 608, hex bolt M8 x 80, washer M8, self-locking nut M8 | 3, 4, 10 |
 | 28BYJ-48 stepper with ULN2003 driver board, 2 screws M3 x 10 | 4, 7 |
-| MG90S servo, 4 screws M3 x 12, servo extension lead 15 cm | 5, 8 |
+| MG90S servo, 4 screws M3 x 12 | 5, 8 |
 | 2 IR break-beam sensor pairs (Adafruit 2167 type, 23 cm wires with male pins) | 6, 8 |
 | XIAO ESP32-C6 with pre-soldered headers, 170-point mini breadboard | 7, 8 |
 | Electrolytic capacitor 470 uF, 16 V or more | 8 |
 | Jumper wires: 6 short male-male (links on the board), 6 female-male (ULN2003), 3 male-male (servo) | 8 |
 | USB-C power supply 5 V / 3 A | 11 |
-| Optional: 12 mm panel push button with leads, active 3 V buzzer (20 mA or less), 1 short link and 2 to 4 jumpers | 8 |
+| Optional: 12 mm panel push button with leads, active buzzer for 3.3 V (30 mA or less), 1 short link and 2 jumpers each | 8 |
 
 ## 3. Carousel
 
@@ -80,8 +80,8 @@ side cutters, double-sided foam tape, and tape or stick-on cable clips for the w
    carousel. Fix it with its two screws.
 2. Lead the servo cable to the narrow slot in the tower's back plate, just right of the servo block (seen from
    the front). Push the plug through it standing on edge; the slot is 3 mm wide. From there the cable drops over
-   the front wall into the base. Plug the 15 cm extension lead onto the servo's plug: the servo cable alone does
-   not reach the breadboard.
+   the front wall into the base. The cable ends short of the breadboard: in section 8, three male-male jumpers in
+   its plug bridge the rest.
 3. Fix the tower to the front of the base with 4 x M3 x 12, screwed from inside the base into the tower. The holes
    in the base are vertical slots: leave the screws slightly loose, the height is set during calibration.
 4. Press the servo cable down along the inside of the front wall to the floor and tape it there. The carousel's
@@ -164,8 +164,8 @@ its + and - pins, leave it in place.
 | + | 9g | 5 V |
 | - | 10h | GND |
 
-**Servo**, through the extension lead and 3 male-male jumpers in its free end. Some servos have yellow, red and
-black wires instead.
+**Servo**, through 3 male-male jumpers plugged into the servo's plug, since its cable alone does not reach the
+board. Some servos have yellow, red and black wires instead.
 
 | Servo wire | Hole | Connects to |
 |---|---|---|
@@ -207,9 +207,10 @@ needed.
 | buzzer + | 6a | D5 |
 | buzzer - | 14h | GND |
 
-The button goes into the 12 mm hole in the right-hand side wall, nut inside. The buzzer is driven straight from
-a pin, so use an active buzzer for 3 V that draws 20 mA or less. Leave D6 (7a, 7b) free: it is the serial
-transmit pin and chatters while the XIAO boots.
+The button goes into the 12 mm hole in the right-hand side wall, nut inside. If its leads do not reach the board,
+extend each with a jumper. The buzzer is driven straight from a pin, which the firmware sets to its strongest
+drive: use an active buzzer for 3.3 V that draws 30 mA or less, with a female-male jumper on each leg. Leave D6
+(7a, 7b) free: it is the serial transmit pin and chatters while the XIAO boots.
 
 **Lay the wires** flat on the floor, as in the layout drawing: the servo, stepper driver and button wires on
 the right, the light barrier wires on the left. Wires may pass under the stepper. Tape them down every few

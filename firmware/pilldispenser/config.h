@@ -14,7 +14,8 @@
 #define PIN_BUTTON  D2    // optional push button to GND ("dispense what is due")
 #define PIN_SERVO   D3    // MG90S signal
 #define PIN_BEAM_LED D4   // supply wire of the drop barrier's emitter (about 10 mA): switched by the firmware to test the sensor
-#define PIN_BUZZER  D5    // optional active buzzer / LED, set to -1 if unused. Not D6: that is the UART TX pin, the
+#define PIN_BUZZER  D5    // optional active buzzer for 3.3 V, up to 30 mA (pin set to full drive in motion.h), or an LED;
+                          // set to -1 if unused. Not D6: that is the UART TX pin, the
                           // boot ROM sends its log there at every reset and a buzzer on it would chirp
 #define PIN_IN1     D7    // ULN2003 IN1..IN4 -> 28BYJ-48 carousel stepper
 #define PIN_IN2     D8
