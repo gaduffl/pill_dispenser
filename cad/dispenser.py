@@ -13,8 +13,11 @@ Concept
 * The base holds everything active: a 28BYJ-48 stepper indexes the carousel,
   one micro servo at the station drives whichever roller is parked in front
   of it through a slide-through dog coupling, a V-chute with a light barrier
-  counts every pill on its way into the cup. A second light barrier and a
-  flag under the carousel hub give the home position.
+  counts every pill on its way into the cup. A second light barrier reads ten
+  flags under the carousel hub, one per slot: every arrival at a slot is
+  confirmed, and slot 1's flag is twice as wide (the home mark).
+* The electronics (breadboard with the XIAO, ULN2003 board) sit on the floor
+  of the base; the XIAO's USB-C socket faces an opening in the back wall.
 """
 import math
 import cadquery as cq
@@ -91,10 +94,17 @@ GEAR_M = 1.25
 GEAR_Z = 60
 PINION_Z = 15
 GEAR_C = GEAR_M * (GEAR_Z + PINION_Z) / 2 + 0.2
-HOME_R = 34.0          # home flag: a short arc wall under the hub
-HOME_B = 24.0          # the home light barrier looks along a chord this far from the axis
+HOME_R = 34.0          # index flags: short arc walls under the hub, centred on this radius
+HOME_B = 24.0          # the index ("home") light barrier looks along a chord this far from the axis
 HOME_ROT = -110.0      # direction of that chord in the base
 HOME_FLAG_ANG = HOME_ROT + math.degrees(math.atan2(HOME_B, math.sqrt(HOME_R ** 2 - HOME_B ** 2)))
+# One flag per slot. Moving forward the carousel turns clockwise (seen from above). Every flag reaches the beam
+# FLAG_LEAD degrees before its slot stands at the station and covers the beam while the slot is parked there.
+# Slot 1's flag is twice as wide: that is the home mark. The firmware (config.h) uses the same three angles.
+FLAG_R0, FLAG_R1 = 33.2, 35.0     # 1.8 mm wall; stays clear of the sensor cradles (r 32.2 / 36.0) and the pinion (36.4)
+FLAG_LEAD = 7.0
+FLAG_W = 12.0
+FLAG_W_HOME = 24.0
 WIN_X0, WIN_X1 = 59.0, 96.5      # drop window in the plate (follows the outlet of the module)
 
 # stack heights (absolute Z)
@@ -111,8 +121,22 @@ FLAT_X = 96.0                      # flat front face of the tub
 FLAT_TOP = Z_PLATE_BOT - 7.5
 BAY_HW = 24.2                      # cup bay half width
 MOTOR_M = Z_PLATE_BOT - 28.5       # mounting face of the 28BYJ-48
+STEPPER_ANG = 126.0                # direction of the stepper from the axis (0 = station). A multiple of 6 deg (the
+                                   # ring gear pitch) keeps the modelled pinion in mesh. The back (180) is kept free
+                                   # for the breadboard, so the USB-C socket faces the back wall.
 PILLAR_TOP = Z_PLATE_TOP - HUB_H   # inner race seat
 AXLE_HEAD_Z = 11.0                 # depth of the hex pocket for the M8 x 80 bolt head
+
+# electronics on the tub floor
+BB_L, BB_W = 47.6, 35.6            # pocket for a 170-point mini breadboard (45.5-47 x 34.5-35 mm)
+BB_ANG = 180.0                     # long axis radial, at the back; the XIAO sits at the outer end
+BB_R1 = math.sqrt((TUB_R - TUB_WALL - 0.4) ** 2 - (BB_W / 2) ** 2)    # outer end: as close to the wall as the corners allow
+BB_R0 = BB_R1 - BB_L
+USB_Z0, USB_Z1 = FLOOR_T + 8.0, FLOOR_T + 20.0   # opening for the USB-C plug (XIAO on pre-soldered headers)
+USB_HW = 8.0
+ULN_ANG, ULN_R = 72.0, 79.0        # ULN2003 driver board (boards vary: 25 x 18 up to 35 x 32 mm)
+ULN_L, ULN_W = 38.0, 35.0          # pocket, long side tangential
+BTN_ANG, BTN_Z, BTN_D = 60.0, 45.0, 12.2   # optional 12 mm panel push button, right-hand side wall, above the ULN2003
 
 # chute
 CH_X0, CH_X1 = 56.2, 84.2
@@ -239,6 +263,21 @@ def cyl_y(x, z, r, y0, y1):
 
 def rot_z(obj, ang):
     return obj.rotate((0, 0, 0), (0, 0, 1), ang)
+
+
+def at_stepper(obj):
+    """stepper parts are modelled on the -X axis; this turns them to STEPPER_ANG"""
+    return rot_z(obj, STEPPER_ANG - 180.0)
+
+
+def pinion_placed(p):
+    """the pinion (as returned by pinion()) on the motor shaft, assembly coordinates"""
+    return at_stepper(p.translate((-GEAR_C, 0, MOTOR_M + 1.5)))
+
+
+def pinion_pos():
+    a = math.radians(STEPPER_ANG)
+    return GEAR_C * math.cos(a), GEAR_C * math.sin(a), MOTOR_M + 1.5
 
 
 def gear_profile(m, z, pa_deg=20.0, backlash=0.12, clearance=0.25, n=7, phase=0.0):
@@ -486,11 +525,38 @@ def gate_in_module(pill="XL_soft"):
 # --------------------------------------------------------------------------
 # carousel (plate + hub with bearings + ring gear), plate top at z = 0
 # --------------------------------------------------------------------------
+def sector(a0, a1, r, z0, z1):
+    """pie slice between the angles a0 < a1 (degrees)"""
+    n = max(2, int(math.ceil((a1 - a0) / 3.0)))
+    pts = [(0.0, 0.0)] + [(r * math.cos(math.radians(a0 + (a1 - a0) * k / n)),
+                           r * math.sin(math.radians(a0 + (a1 - a0) * k / n))) for k in range(n + 1)]
+    return cq.Workplane("XY").workplane(offset=z0).polyline(pts).close().extrude(z1 - z0)
+
+
+def flag_span(i):
+    """angular span (degrees, carousel frame) of the index flag of slot i + 1. Forward = clockwise, so the
+    leading edge is the lower angle; the beam crosses the flag circle at HOME_FLAG_ANG."""
+    a0 = HOME_FLAG_ANG + i * SLOT_ANG - FLAG_LEAD
+    return a0, a0 + (FLAG_W_HOME if i == 0 else FLAG_W)
+
+
+def index_flag(i):
+    """index flag of slot i + 1: an arc wall under the hub that passes through the index light barrier"""
+    ring = cyl_z(0, 0, FLAG_R1, -HUB_H - 13.0, -HUB_H + 0.5).cut(cyl_z(0, 0, FLAG_R0, -HUB_H - 14, 0))
+    a0, a1 = flag_span(i)
+    return ring.intersect(sector(a0, a1, FLAG_R1 + 5, -HUB_H - 14, 0))
+
+
+def index_flags():
+    f = index_flag(0)
+    for i in range(1, N_SLOTS):
+        f = f.union(index_flag(i))
+    return f
+
+
 def home_flag():
-    """home flag: a short arc wall under the hub; once per turn it passes through the home light barrier"""
-    flag = (cyl_z(0, 0, HOME_R + 0.8, -HUB_H - 13.0, -HUB_H + 0.5).cut(cyl_z(0, 0, HOME_R - 0.8, -HUB_H - 14, 0))
-            .intersect(box(0, 60, -4.2, 4.2, -HUB_H - 14, 0)))
-    return rot_z(flag, HOME_FLAG_ANG)
+    """slot 1's flag, the wide one (kept for the checks and older scripts)"""
+    return index_flag(0)
 
 
 def keyhole(sx, sy):
@@ -507,7 +573,7 @@ def carousel():
     for i in range(N_SLOTS):
         a = (i + 0.5) * SLOT_ANG
         c = c.union(rot_z(box(36.5, 100.0, -1.2, 1.2, -PLATE_T - RIB_H, -PLATE_T + 0.01), a))
-    c = c.union(home_flag())
+    c = c.union(index_flags())
     # bearing seats (2 x 608), M8 axle
     c = c.cut(cyl_z(0, 0, 11.1, -7.0, 1))
     cone = (cq.Workplane("XY").workplane(offset=-7.0).circle(11.1)
@@ -568,15 +634,15 @@ def tub():
     t = t.union(cyl_z(0, 0, 13, 0, PILLAR_TOP - 0.6)).union(cyl_z(0, 0, 5.6, 0, PILLAR_TOP))
     t = t.cut(cyl_z(0, 0, 4.2, -1, 200))
     t = t.cut(cq.Workplane("XY").polygon(6, 13.5 / math.cos(math.pi / 6)).extrude(AXLE_HEAD_Z))
-    # stepper posts (28BYJ-48 hangs between them, shaft up)
+    # stepper posts (28BYJ-48 hangs between them, shaft up), modelled on -X and turned to STEPPER_ANG
     mx = -(GEAR_C + 8.0)
     for s in (1, -1):
         post = box(mx - 5, mx + 5, s * 17.5 - 5, s * 17.5 + 5, 0, MOTOR_M - 1.0)
         post = post.union(box(mx - 5, mx + 5, min(s * 12.5, s * 26), max(s * 12.5, s * 26), 0, 14))
-        t = t.union(post)
-    t = t.cut(cyl_z(mx, 0, 14.6, FLOOR_T, 200))
+        t = t.union(at_stepper(post))
+    t = t.cut(at_stepper(cyl_z(mx, 0, 14.6, FLOOR_T, 200)))
     for s in (1, -1):
-        t = t.cut(cyl_z(mx, s * 17.5, 1.4, MOTOR_M - 14, 200))
+        t = t.cut(at_stepper(cyl_z(mx, s * 17.5, 1.4, MOTOR_M - 14, 200)))
     # station: cup bay walls, chute seat, fences
     for s in (1, -1):
         y0, y1 = sorted((s * BAY_HW, s * (BAY_HW + 2.4)))
@@ -600,15 +666,25 @@ def tub():
             t = t.cut(box(FLAT_X - TUB_WALL - 1, FLAT_X + 1, y - 1.7, y + 1.7, z - 4, z + 4))
     # servo cable notch
     t = t.cut(box(FLAT_X - TUB_WALL - 1, FLAT_X + 1, 27.5, 30.5, FLAT_TOP - 9, 200))
-    # USB-C opening for the XIAO (breadboard sits on the floor in front of it)
-    usb = box(TUB_R - 6, TUB_R + 2, -8, 8, FLOOR_T + 8.0, FLOOR_T + 20.0)
-    t = t.cut(rot_z(usb, 138))
-    # breadboard outline on the floor (170-point mini breadboard, 47 x 35)
-    bb = box(53.0, 101.0, -18.2, 18.2, FLOOR_T - 0.01, FLOOR_T + 0.8).cut(box(54.2, 99.8, -17.0, 17.0, 0, 9))
-    bb = bb.intersect(cyl_z(0, 0, TUB_R - 1, 0, 9))
-    t = t.union(rot_z(bb, 138))
+    # USB-C opening in the back wall; the XIAO sits at the outer end of the breadboard, socket towards it
+    usb = box(TUB_R - 6, TUB_R + 2, -USB_HW, USB_HW, USB_Z0, USB_Z1)
+    t = t.cut(rot_z(usb, BB_ANG))
+    # breadboard pocket on the floor: a 1 mm rim on three sides, the back wall closes the fourth
+    t = t.union(rot_z(seat_rim(BB_R0, BB_R1, BB_W / 2), BB_ANG))
+    # ULN2003 driver board: pocket next to the stepper (long side tangential)
+    t = t.union(rot_z(seat_rim(ULN_R - ULN_W / 2, ULN_R + ULN_W / 2, ULN_L / 2), ULN_ANG))
+    # hole for the optional push button ("dispense what is due")
+    t = t.cut(rot_z(cyl_x(0, BTN_Z, BTN_D / 2, TUB_R - 8, TUB_R + 2), BTN_ANG))
     # cable tie slots in the floor are left to the builder: adhesive pads work fine
     return t
+
+
+def seat_rim(r0, r1, hw, rim=1.2, h=1.0):
+    """low rim around a rectangular pocket on the floor (radial from r0 to r1, half width hw), open towards the wall
+    if r1 reaches it"""
+    outer = box(r0 - rim, r1 + rim, -hw - rim, hw + rim, FLOOR_T - 0.01, FLOOR_T + h)
+    rim_ = outer.cut(box(r0, r1, -hw, hw, 0, FLOOR_T + h + 1))
+    return rim_.intersect(cyl_z(0, 0, TUB_R - TUB_WALL + 0.01, 0, FLOOR_T + h + 1))
 
 
 # --------------------------------------------------------------------------
@@ -721,7 +797,30 @@ def stepper_dummy():
     m = m.union(box(mx - 3.5, mx + 3.5, -21, 21, MOTOR_M - 1.0, MOTOR_M))
     m = m.union(cyl_z(mx + 8, 0, 4.5, MOTOR_M, MOTOR_M + 1.5)).union(cyl_z(mx + 8, 0, 2.5, MOTOR_M, MOTOR_M + 10))
     m = m.union(box(mx - 17, mx - 13, -7.3, 7.3, MOTOR_M - 17, MOTOR_M))
-    return m
+    return at_stepper(m)
+
+
+def electronics_dummies():
+    """breadboard with the XIAO and a USB-C plug, ULN2003 board: where they sit (checks and renders only)"""
+    z0 = FLOOR_T + 0.3                                    # adhesive foam under the breadboard
+    zt = z0 + 8.5                                         # breadboard top
+    x1 = BB_R1 - 0.2 + 1.0                                # XIAO board end, ~1 mm past the breadboard end
+    bb = box(BB_R1 - 0.2 - 46.9, BB_R1 - 0.2, -17.5, 17.5, z0, zt)
+    xiao = box(x1 - 21.0, x1, -8.9, 8.9, zt + 2.5, zt + 3.5)                           # PCB on 2.5 mm header spacers
+    for s in (1, -1):
+        y0, y1 = sorted((s * 6.4, s * 8.9))
+        xiao = xiao.union(box(x1 - 19.4, x1 - 1.6, y0, y1, zt, zt + 2.5))
+    zc = zt + 3.5 + 1.63                                  # centre of the USB-C socket
+    xiao = xiao.union(box(x1 - 7.4, x1 + 0.4, -4.47, 4.47, zt + 3.5, zt + 3.5 + 3.26))
+    # plugged in, the metal shell is inside the socket and the moulded grip starts at the socket face, about 1 mm
+    # inside the wall: the grip has to pass the opening (USB_HW, USB_Z0..USB_Z1). Typical grip 12.4 x 7.2 mm.
+    plug = box(x1 + 0.4, x1 + 25.0, -6.2, 6.2, zc - 3.6, zc + 3.6)
+    uln = box(ULN_R - 16.0, ULN_R + 16.0, -17.5, 17.5, FLOOR_T + 1.0, FLOOR_T + 17.0)   # 35 x 32 board + parts
+    rin = math.sqrt((TUB_R - TUB_WALL) ** 2 - 8.0 ** 2) - 0.1                         # inside of the wall at the nut
+    btn = cyl_x(0, BTN_Z, 5.9, rin - 22.0, TUB_R + 2.0)                                # 12 mm thread and body
+    btn = btn.union(cyl_x(0, BTN_Z, 8.0, rin - 3.0, rin)).union(cyl_x(0, BTN_Z, 8.0, TUB_R + 0.2, TUB_R + 4.0))
+    return {"breadboard": rot_z(bb, BB_ANG), "xiao": rot_z(xiao, BB_ANG), "usb_plug": rot_z(plug, BB_ANG),
+            "uln2003": rot_z(uln, ULN_ANG), "button": rot_z(btn, BTN_ANG)}
 
 
 def servo_dummy():

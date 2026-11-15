@@ -1,9 +1,9 @@
 openapi: 3.0.3
 info:
   title: Pill dispenser API
-  version: 0.2.0
+  version: 0.3.0
   description: |
-    REST API of the modular carousel pill dispenser (firmware 0.2.0).
+    REST API of the modular carousel pill dispenser (firmware 0.3.0).
     Base URL: http://pilldispenser.local/api/v1 (mDNS service `_pilldispenser._tcp`, TXT `api=/api/v1`).
 
     Sync model for an app:
@@ -80,8 +80,12 @@ components:
         type:
           type: string
           description: >
-            boot, homed, resync, job_started, job_done, job_partial, job_failed, slot_empty, double, low_stock,
-            chute_blocked, dose_due, dose_started, dose_missed, button, stop, error
+            boot, homed, resync, moved, job_started, job_done, job_partial, job_failed, slot_empty, double, low_stock,
+            chute_blocked, dose_due, dose_started, dose_missed, button, stop, error.
+            Every arrival at a slot is checked against that slot's index flag. resync = the arrival did not match:
+            either the position was corrected (message "slot reached N steps off, corrected") or the carousel homes
+            again (message ends in "homing again"); no stroke happens until the slot is confirmed. moved = the index
+            light barrier changed while the carousel stood still (turned by hand): it homes before the next move.
         message: { type: string }
         slot: { type: integer }
         job_id: { type: integer }
@@ -94,7 +98,7 @@ paths:
           description: state is one of boot, idle, homing, moving, dispensing, error
           content:
             application/json:
-              example: { device: pilldispenser, firmware: 0.2.0, state: idle, homed: true, slot_at_station: 3, current_job: 0, error: "", slots: 10, time: 1794400000, uptime_s: 532, last_event_seq: 17, due: [], wifi: { ssid: home, ip: 192.168.1.50, rssi: -58 } }
+              example: { device: pilldispenser, firmware: 0.3.0, state: idle, homed: true, slot_at_station: 3, position_confirmed: true, current_job: 0, error: "", slots: 10, time: 1794400000, uptime_s: 532, last_event_seq: 17, due: [], wifi: { ssid: home, ip: 192.168.1.50, rssi: -58 } }
   /slots:
     get:
       summary: All slots
@@ -170,7 +174,7 @@ paths:
         retries, max_per_item, refill_slots, due_timeout_min, rehome_jobs, buzzer.
       responses: { '200': { description: Settings object } }
   /diag:
-    get: { summary: "Sensor self-test and raw values for setup. beam_ok is true when the receiver in the chute follows its emitter being switched off and on; beam_level_lit / beam_level_dark are the two levels found; home_level is the raw level of the home light barrier, home_active whether the flag is in it; also servo_us, position_steps, steps_per_slot.", responses: { '200': { description: Diagnostics } } }
+    get: { summary: "Sensor self-test and raw values for setup. beam_ok is true when the receiver in the chute follows its emitter being switched off and on; beam_level_lit / beam_level_dark are the two levels found; home_level is the raw level of the index light barrier under the carousel, home_active whether a flag is in it, flag_level the level a flag gives (found by homing); index_flags_deg the ten flag widths measured by the last homing, slot 1 first (about 24-27, then about 12-15 each: the beam has a width, so a flag reads a little wider than it is); position_confirmed whether the slot at the station was confirmed by its flag; also servo_us, position_steps, steps_per_slot.", responses: { '200': { description: Diagnostics } } }
   /jog:
     post: { summary: Calibration - move the carousel by raw half-steps, requestBody: { content: { application/json: { example: { steps: 40 } } } }, responses: { '200': { description: ok } } }
   /servo:
@@ -178,7 +182,10 @@ paths:
   /park:
     post: { summary: Return the roller drive to the pocket-up position, responses: { '200': { description: ok } } }
   /calibrate/slot1:
-    post: { summary: Calibration - declare that slot 1 is exactly at the station now, responses: { '200': { description: "{ home_offset }" } } }
+    post:
+      summary: Calibration - declare that slot 1 is exactly at the station now
+      description: Home first, then jog slot 1 to the station. Refused when slot 1's index flag is not in the light barrier at this position (station closer than 2 degrees to an edge of the flag, or a different slot at the station).
+      responses: { '200': { description: "{ home_offset }" }, '409': { description: "Not homed, busy, or slot 1's flag is not in the light barrier here" } }
   /wifi:
     post: { summary: Store Wi-Fi credentials and restart, requestBody: { content: { application/json: { example: { ssid: home, password: secret } } } }, responses: { '200': { description: ok } } }
   /reboot:

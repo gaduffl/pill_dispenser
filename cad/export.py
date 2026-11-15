@@ -61,13 +61,15 @@ if __name__ == "__main__":
     a.add(P["chute"], name="chute", color=cq.Color(0.92, 0.8, 0.35))
     a.add(P["cup"], name="cup", color=cq.Color(0.95, 0.95, 0.95))
     a.add(P["drive_dog"], name="drive_dog", color=cq.Color(0.86, 0.27, 0.27))
-    a.add(P["pinion"].translate((-d.GEAR_C, 0, d.MOTOR_M + 1.5)), name="pinion", color=cq.Color(0.86, 0.27, 0.27))
+    a.add(d.pinion_placed(P["pinion"]), name="pinion", color=cq.Color(0.86, 0.27, 0.27))
     a.add(up(P["carousel"]), name="carousel", color=cq.Color(0.8, 0.81, 0.83))
     a.add(d.stepper_dummy(), name="ref_28BYJ48", color=cq.Color(0.66, 0.68, 0.24))
     a.add(d.servo_dummy(), name="ref_MG90S", color=cq.Color(0.24, 0.35, 0.78))
     a.add(d.axle_dummy(), name="ref_M8_axle_608", color=cq.Color(0.63, 0.63, 0.65))
     for n, o in d.sensor_dummies().items():
         a.add(o, name="ref_light_barrier_" + n, color=cq.Color(0.15, 0.15, 0.17))
+    for n, o in d.electronics_dummies().items():
+        a.add(o, name="ref_" + n, color=cq.Color(0.12, 0.42, 0.25))
     keys = list(d.PILLS)
     for i in range(d.N_SLOTS):
         ang = i * d.SLOT_ANG

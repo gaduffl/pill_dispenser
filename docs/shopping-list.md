@@ -13,13 +13,21 @@ Links to marketplace listings can go stale; the part names are what matters.
 | 1 | MG90S micro servo, metal gear, 180 degrees | [Funduinoshop](https://funduinoshop.com/en/electronic-modules/electric-motors-and-accessories/elektromotoren/servo-motors/mg90s-metal-gear-micro-servo) · [AZ-Delivery](https://az-delivery.de/en/collections/aktoren/products/mg90s-micro-servomotor) | 4.00 EUR at Funduinoshop |
 | 2 | IR break-beam sensor pair, 3 mm LEDs, wires with header ends (Adafruit 2167) | [Opencircuit (NL)](https://opencircuit.shop/product/ir-break-beam-sensors-premium-wire-header-ends) · [Adafruit](https://www.adafruit.com/products/2167), which names Eckstein Komponente as its German distributor · [Melopero (IT)](https://www.melopero.com/en/shop/sensors/infrared/irbreakbeamsensor3mmleds/) | 2.10 EUR each at Opencircuit |
 | 1 | Mini breadboard, 170 contacts | [BerryBase](https://www.berrybase.de/en/mini-breadboard-with-170-contacts) | from 0.99 EUR |
+| 1 | Electrolytic capacitor 470 uF, 16 V or more, radial, up to 10 mm diameter | any electronics shop | not priced |
+| 1 | Servo extension lead, 15 cm (JR / universal plug) | any RC or electronics shop | not priced |
 | 1 | Jumper wire set with male-male and female-male wires, 20 cm ("40pin Jumper / Dupont Kabel Set, je 1x F-F / M-M / F-M") | [BerryBase, prototyping category](https://www.berrybase.de/bauelemente/prototyping/) | 4.90 EUR |
 | 1 | USB-C power supply 5.1 V / 3 A with fixed cable (official Raspberry Pi 15 W supply) | [BerryBase](https://www.berrybase.de/offizielles-raspberry-pi-usb-c-netzteil-5-1v-3-0a-eu-schwarz) | 7.90 EUR |
 
-At these prices the electronics come to roughly 32 EUR plus shipping.
+At these prices the electronics come to roughly 32 EUR plus shipping, plus the capacitor and the
+servo extension lead (a few euros together).
 
-Optional: a push button and an active 3.3 V buzzer (any breadboard type), a 15 cm servo extension
-lead if the servo cable does not reach the breadboard.
+The capacitor and the extension lead are needed: the capacitor keeps the servo's starting current
+from resetting the ESP32, and the servo cable alone does not reach the breadboard. Jumper wires
+used: 9 male-male (6 of them as short links on the breadboard; pre-cut breadboard jumpers are
+neater there) and 6 female-male, so one set is plenty.
+
+Optional: a 12 mm panel-mount push button (normally open) with leads, for the hole in the side wall,
+and an active buzzer for 3 V that draws 20 mA or less, since a pin of the XIAO drives it directly.
 
 Before ordering the base print: the sensor mounts assume housings of 20 x 10 x 8 mm, the size
 Adafruit gives for part 2167. Clones can differ.
@@ -41,3 +49,6 @@ Adafruit gives for part 2167. Clones can differ.
 
 About 1.6 kg of PETG for the full set with 10 modules (two 1 kg spools), about 0.45 kg for base,
 carousel and station alone. PLA works too.
+
+Print the carousel and the chute in black or another dark, opaque colour: their index flags and walls
+must block the infrared light of the light barriers. Everything else can be any colour.

@@ -6,7 +6,8 @@ from preview import mesh_of, render
 
 COL = dict(tub=(92, 100, 112), carousel=(205, 208, 212), module=(120, 170, 215), lid=(240, 240, 240),
            roller=(238, 150, 60), tower=(92, 100, 112), chute=(235, 205, 90), cup=(245, 245, 245),
-           dog=(220, 70, 70), gate=(90, 165, 100), sensor=(40, 40, 46), pinion=(220, 70, 70), motor=(170, 175, 60), servo=(60, 90, 200), axle=(160, 160, 165))
+           dog=(220, 70, 70), gate=(90, 165, 100), sensor=(40, 40, 46), pinion=(220, 70, 70), motor=(170, 175, 60), servo=(60, 90, 200), axle=(160, 160, 165),
+           pcb=(40, 120, 75), plug=(30, 30, 34))
 
 def assembly(P, car_ang=0.0, roll_ang=0.0, n_mod=d.N_SLOTS, pill="XL_soft", lids=True, cut=None):
     items = []
@@ -20,10 +21,11 @@ def assembly(P, car_ang=0.0, roll_ang=0.0, n_mod=d.N_SLOTS, pill="XL_soft", lids
     add("tub", P["base_tub"], COL["tub"]); add("tower", P["tower"], COL["tower"])
     add("chute", P["chute"], COL["chute"]); add("cup", P["cup"], COL["cup"])
     add("dog", P["drive_dog"].rotate((0, 0, d.Z_AXIS), (1, 0, d.Z_AXIS), roll_ang), COL["dog"])
-    add("pinion", P["pinion"].translate((-d.GEAR_C, 0, d.MOTOR_M + 1.5)), COL["pinion"])
+    add("pinion", d.pinion_placed(P["pinion"]), COL["pinion"])
     add("motor", d.stepper_dummy(), COL["motor"]); add("servo", d.servo_dummy(), COL["servo"])
     add("axle", d.axle_dummy(), COL["axle"])
     for n, o in d.sensor_dummies().items(): add(n, o, COL["sensor"])
+    for n, o in d.electronics_dummies().items(): add(n, o, COL["plug" if n == "usb_plug" else "pcb"])
     add("carousel", d.rot_z(up(P["carousel"]), car_ang), COL["carousel"])
     keys = list(d.PILLS)
     for i in range(n_mod):

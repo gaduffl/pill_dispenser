@@ -110,6 +110,7 @@ static void hStatus() {
   d["state"] = motion::MSTATE_NAME[motion::state];
   d["homed"] = (bool)motion::homed;
   d["slot_at_station"] = motion::slotAtStation() + 1;
+  d["position_confirmed"] = motion::homed && motion::parked;   // the slot at the station was confirmed by its index flag
   d["current_job"] = (uint32_t)motion::currentJob;
   d["error"] = motion::state == motion::M_ERROR ? motion::lastError : "";
   d["slots"] = N_SLOTS;
@@ -308,9 +309,11 @@ static void hMove(const String &what) {
 static void hCalibrate(const String &what) {
   if (motion::busy()) return sendErr(409, "busy");
   if (what == "slot1") {                       // "slot 1 is exactly at the station right now"
+    if (!motion::homed) return sendErr(409, "home first, then jog slot 1 to the station");
     Lock l;
-    cfg.home_offset = cfg.home_offset - motion::st_pos;
-    motion::st_pos = 0;
+    // the station has to lie well inside slot 1's flag, otherwise the flags cannot confirm the slots
+    if (!motion::calibrateSlot1())
+      return sendErr(409, "slot 1's index flag is not in the light barrier here - wrong slot, or flags misplaced");
     saveConfig();
     JsonDocument d;
     d["home_offset"] = cfg.home_offset;
@@ -327,7 +330,11 @@ static void hDiag() {
   d["beam_level_dark"] = (int)motion::bm_dark;
   d["beam_last_count"] = (uint32_t)motion::bm_events;
   d["home_level"] = digitalRead(PIN_HOME);
-  d["home_active"] = motion::homeActive();
+  d["home_active"] = motion::homeActive();      // index barrier sees a flag right now
+  d["flag_level"] = motion::st_flagLvl == HIGH ? "HIGH" : "LOW";
+  JsonArray fw = d["index_flags_deg"].to<JsonArray>();   // widths measured by the last homing, slot 1 first (about 24-27 / 12-15 deg)
+  for (int i = 0; i < N_SLOTS; i++) fw.add(roundf(motion::flagW[i] / STEPS_PER_DEG * 10.0f) / 10.0f);
+  d["position_confirmed"] = motion::homed && motion::parked;
   d["servo_us"] = (int)motion::sv_us;
   d["position_steps"] = (int32_t)motion::st_pos;
   d["steps_per_slot"] = STEPS_PER_SLOT;
