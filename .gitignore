@@ -1,0 +1,8 @@
+# Python bytecode from the CAD scripts
+__pycache__/
+
+# Wi-Fi credentials, copied from secrets.example.h
+firmware/pilldispenser/secrets.h
+
+# PlatformIO build output
+firmware/.pio/
