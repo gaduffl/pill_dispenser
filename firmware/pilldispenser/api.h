@@ -4,6 +4,7 @@
 #include <WebServer.h>
 #include "state.h"
 #include "motion.h"
+#include "doses.h"
 
 static WebServer server(80);
 static bool rebootPending = false;
@@ -87,21 +88,6 @@ static Job *findJob(uint32_t id) {
   return nullptr;
 }
 
-static Schedule *findSchedule(uint16_t id) {
-  for (auto &s : schedules) if (s.used && s.id == id) return &s;
-  return nullptr;
-}
-
-static void dueRemove(uint16_t id) {
-  for (int i = 0; i < MAX_DUE; i++) if (dueList[i] == id) dueList[i] = 0;
-}
-
-// queue the items of a schedule as a job
-static uint32_t runSchedule(Schedule &s, const char *source) {
-  dueRemove(s.id);
-  return motion::enqueueJob(s.items, s.n, source, "");
-}
-
 // ---------------------------------------------------------------- handlers
 static void hStatus() {
   JsonDocument d;
@@ -110,6 +96,7 @@ static void hStatus() {
   d["state"] = motion::MSTATE_NAME[motion::state];
   d["homed"] = (bool)motion::homed;
   d["slot_at_station"] = motion::slotAtStation() + 1;
+  d["position_confirmed"] = motion::homed && motion::parked;   // the slot at the station was confirmed by its index flag
   d["current_job"] = (uint32_t)motion::currentJob;
   d["error"] = motion::state == motion::M_ERROR ? motion::lastError : "";
   d["slots"] = N_SLOTS;
@@ -117,7 +104,20 @@ static void hStatus() {
   d["uptime_s"] = millis() / 1000;
   d["last_event_seq"] = eventSeq;
   JsonArray due = d["due"].to<JsonArray>();
-  for (int i = 0; i < MAX_DUE; i++) if (dueList[i]) due.add(dueList[i]);
+  JsonArray dd = d["due_doses"].to<JsonArray>();               // the same, with whose dose it is
+  {
+    Lock l;
+    for (int i = 0; i < MAX_DUE; i++) {
+      if (!dueList[i]) continue;
+      due.add(dueList[i]);
+      Schedule *s = findSchedule(dueList[i]);
+      JsonObject o = dd.add<JsonObject>();
+      o["schedule"] = dueList[i];
+      o["profile"] = s ? s->profile : 0;
+      o["since"] = dueSince[i];
+    }
+  }
+  d["cup_profile"] = cupProfile;                               // whose pills went into the cup last, 0 = none yet
   JsonObject w = d["wifi"].to<JsonObject>();
   w["ssid"] = WiFi.SSID();
   w["ip"] = WiFi.localIP().toString();
@@ -139,7 +139,19 @@ static void hSlots(const String &sub, HTTPMethod m) {
   if (m == HTTP_PUT || m == HTTP_POST) {
     JsonDocument b;
     if (!readBody(b)) return sendErr(400, "invalid JSON");
+    Slot old = slots[n - 1];
     slotFromJson(n - 1, b.as<JsonObjectConst>());
+    uint8_t p = slots[n - 1].profile;
+    for (auto &s : schedules) {                  // reserving a slot must not take it from the other profile's plan
+      if (!s.used || !p || s.profile == p) continue;
+      for (uint8_t k = 0; k < s.n; k++) {
+        if (s.items[k].slot != n - 1) continue;
+        slots[n - 1] = old;
+        char msg[72];
+        snprintf(msg, sizeof(msg), "schedule %u of profile %u uses this slot", (unsigned)s.id, (unsigned)s.profile);
+        return sendErr(409, msg);
+      }
+    }
     saveConfig();
   }
   slotToJson(n - 1, d.to<JsonObject>());
@@ -153,8 +165,16 @@ static void hDispense() {
   uint8_t n = 0;
   String e = itemsFromJson(b["items"].as<JsonArrayConst>(), items, n);
   if (e.length()) return sendErr(400, e.c_str());
+  long pr = b["profile"] | 0L;                 // whose pills; without it, the owner of the reserved slots (or 1)
+  if (pr < 0 || pr > N_PROFILES) return sendErr(400, "profile must be 1 or 2");
+  uint8_t p = (uint8_t)pr;
+  {
+    Lock l;
+    e = itemsProfile(items, n, p);
+  }
+  if (e.length()) return sendErr(400, e.c_str());
   bool existing = false;
-  uint32_t id = motion::enqueueJob(items, n, "api", b["request_id"] | "", &existing);
+  uint32_t id = motion::enqueueJob(items, n, "api", b["request_id"] | "", &existing, p);
   if (!id) return sendErr(503, "job queue full");
   Lock l;
   JsonDocument d;
@@ -226,6 +246,9 @@ static void hSchedules(const String &sub, const String &action, HTTPMethod m) {
       *s = Schedule();
       String e = scheduleFromJson(b.as<JsonObjectConst>(), *s, false);
       if (e.length()) return sendErr(400, e.c_str());
+      uint8_t p = s->profile;
+      e = itemsProfile(s->items, s->n, p);
+      if (e.length()) return sendErr(400, e.c_str());
       s->used = true;
       s->id = ++scheduleSeq;
       saveSchedules();
@@ -239,8 +262,9 @@ static void hSchedules(const String &sub, const String &action, HTTPMethod m) {
   Schedule *s = findSchedule((uint16_t)sub.toInt());
   if (!s) return sendErr(404, "no such schedule");
   if (action == "run" && m == HTTP_POST) {
-    uint32_t id = runSchedule(*s, "api");
-    if (!id) return sendErr(503, "job queue full");
+    String why;
+    uint32_t id = runSchedule(*s, "api", &why);
+    if (!id) return sendErr(why == "job queue full" ? 503 : 409, why.c_str());
     Job *j = findJob(id);
     if (j) jobToJson(*j, d.to<JsonObject>());
     return sendJson(202, d);
@@ -256,6 +280,9 @@ static void hSchedules(const String &sub, const String &action, HTTPMethod m) {
     if (!readBody(b)) return sendErr(400, "invalid JSON");
     Schedule tmp = *s;
     String e = scheduleFromJson(b.as<JsonObjectConst>(), tmp, true);
+    if (e.length()) return sendErr(400, e.c_str());
+    uint8_t p = tmp.profile;
+    e = itemsProfile(tmp.items, tmp.n, p);
     if (e.length()) return sendErr(400, e.c_str());
     *s = tmp;
     saveSchedules();
@@ -308,9 +335,11 @@ static void hMove(const String &what) {
 static void hCalibrate(const String &what) {
   if (motion::busy()) return sendErr(409, "busy");
   if (what == "slot1") {                       // "slot 1 is exactly at the station right now"
+    if (!motion::homed) return sendErr(409, "home first, then jog slot 1 to the station");
     Lock l;
-    cfg.home_offset = cfg.home_offset - motion::st_pos;
-    motion::st_pos = 0;
+    // the station has to lie well inside slot 1's flag, otherwise the flags cannot confirm the slots
+    if (!motion::calibrateSlot1())
+      return sendErr(409, "slot 1's index flag is not in the light barrier here - wrong slot, or flags misplaced");
     saveConfig();
     JsonDocument d;
     d["home_offset"] = cfg.home_offset;
@@ -327,7 +356,11 @@ static void hDiag() {
   d["beam_level_dark"] = (int)motion::bm_dark;
   d["beam_last_count"] = (uint32_t)motion::bm_events;
   d["home_level"] = digitalRead(PIN_HOME);
-  d["home_active"] = motion::homeActive();
+  d["home_active"] = motion::homeActive();      // index barrier sees a flag right now
+  d["flag_level"] = motion::st_flagLvl == HIGH ? "HIGH" : "LOW";
+  JsonArray fw = d["index_flags_deg"].to<JsonArray>();   // widths measured by the last homing, slot 1 first (about 24-27 / 12-15 deg)
+  for (int i = 0; i < N_SLOTS; i++) fw.add(roundf(motion::flagW[i] / STEPS_PER_DEG * 10.0f) / 10.0f);
+  d["position_confirmed"] = motion::homed && motion::parked;
   d["servo_us"] = (int)motion::sv_us;
   d["position_steps"] = (int32_t)motion::st_pos;
   d["steps_per_slot"] = STEPS_PER_SLOT;

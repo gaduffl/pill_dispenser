@@ -7,10 +7,11 @@ from build import build_parts, up, vol, log
 P = build_parts(); log("built")
 Z = d.Z_PLATE_TOP
 mod = up(P["module_body"]); car = up(P["carousel"]); lid = up(P["module_lid"], Z + d.HOPPER_TOP)
-pin = P["pinion"].translate((-d.GEAR_C, 0, d.MOTOR_M + 1.5))
+pin = d.pinion_placed(P["pinion"])
 static = {"tub": P["base_tub"], "tower": P["tower"], "chute": P["chute"], "cup": P["cup"],
           "dog": P["drive_dog"], "stepper": d.stepper_dummy(), "servo": d.servo_dummy(), "axle": d.axle_dummy()}
 static.update(d.sensor_dummies())
+static.update(d.electronics_dummies())
 
 print("\n1) roller + gate in the module, through the stroke")
 for k in ("XL_soft", "L_cap0", "S_tab6"):
@@ -56,12 +57,13 @@ for step in range(-30, 31):          # fine steps while a module passes the stat
 log("module swept")
 for k in sorted(worst): print("   %-20s worst %.3f at %.1f deg" % (k, *worst[k]))
 if not worst: print("   no contact anywhere")
-# the home flag is the only feature that is not periodic with the slot pitch
-flag = up(d.home_flag()); wb = 0
+# the index flags are not periodic with the slot pitch (slot 1's is wide): sweep them over a whole turn
+flags = up(d.index_flags()); wb = 0
 for a in range(0, 360, 2):
-    b = d.rot_z(flag, a)
-    wb = max([wb, vol(b, pin)] + [vol(b, static[n]) for n in ("tub", "tower", "chute", "stepper", "axle", "home_rx", "home_tx")])
-print("   home flag, full turn: %.3f" % wb)
+    b = d.rot_z(flags, a)
+    wb = max([wb, vol(b, pin)] + [vol(b, static[n]) for n in ("tub", "stepper", "axle", "home_rx", "home_tx")])
+log("index flags swept")
+print("   index flags, full turn: %.3f" % wb)
 
 print("\n5) dispense stroke at the station (dog + roller turning together)")
 for a in (0, 22, 45, 90, 141, 165, 175):
@@ -70,7 +72,20 @@ for a in (0, 22, 45, 90, 141, 165, 175):
     print("   %3d deg: dog x module %.3f  dog x roller %.3f  dog x tower %.3f  roller x tower %.3f  dog x gate %.3f" % (
         a, vol(dog, mod), vol(dog, rol), vol(dog, P["tower"]), vol(rol, P["tower"]), vol(dog, gat0)))
 
-print("\n6) clearances that matter")
+print("\n6) electronics on the floor of the base")
+tub = static["tub"]
+for n in ("breadboard", "xiao", "usb_plug", "uln2003", "button", "button2"):
+    print("   %-10s x tub %.3f   x stepper %.3f   x pinion %.3f" % (n, vol(static[n], tub), vol(static[n], static["stepper"]), vol(static[n], pin)))
+corner = math.hypot(d.BB_R1, d.BB_W / 2)
+print("   breadboard pocket corner to the inside of the wall: %.2f mm" % (d.TUB_R - d.TUB_WALL - corner))
+zc = d.FLOOR_T + 0.3 + 8.5 + 3.5 + 1.63
+print("   USB-C grip 12.4 x 7.2 in the opening %.0f x %.0f: %.1f mm each side, %.1f below, %.1f above" % (
+    2 * d.USB_HW, d.USB_Z1 - d.USB_Z0, d.USB_HW - 6.2, zc - 3.6 - d.USB_Z0, d.USB_Z1 - zc - 3.6))
+print("   largest grip that fits: %.1f x %.1f mm" % (2 * d.USB_HW - 0.6, 2 * min(zc - d.USB_Z0, d.USB_Z1 - zc) - 0.6))
+sx, sy, _ = d.pinion_pos()
+print("   stepper at %.0f deg, pinion centre (%.1f, %.1f); ULN2003 pocket at %.0f deg, r %.0f" % (d.STEPPER_ANG, sx, sy, d.ULN_ANG, d.ULN_R))
+
+print("\n7) clearances that matter")
 print("   prong top to drive flat: %.2f mm" % (d.TOOTH_FLAT - d.PRONG_HI))
 print("   prong tip to roller cone: %.2f mm" % (d.PRONG_TIP - d.WEB_SPH))
 print("   backlash angle of the coupling: +-%.1f deg" % math.degrees(math.atan((d.TOOTH_FLAT - d.PRONG_HI) / (d.PRONG_Y1 - 1.2))))

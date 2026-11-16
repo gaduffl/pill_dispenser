@@ -78,6 +78,26 @@ for pk in ("XL_soft", "L_cap00", "S_tab6"):
         if f > 0.05 and o > 0.05: leak.append(a)
     print("   %s: closed towards the hopper from %s deg, opens to the outlet at %s deg, leak angles: %s" % (pk, closed, opened, leak or "none"))
 
-print("E) home light barrier: beam blocked by the flag only at the home position")
-beam = d.home_beam()
-print("   " + "  ".join("%+d deg: %s" % (a, "blocked" if vol(d.rot_z(up(d.home_flag()), a), beam) > 0.5 else "free") for a in (-14, -10, -6, -3, 0, 3, 6, 10, 14, 180)))
+print("E) index light barrier: one flag per slot, each covers the beam while its slot is at the station")
+beam = d.home_beam(); flags = up(d.index_flags())
+# carousel turned forward (clockwise) by s degrees: slot k stands at the station at s = 36 k
+blocked = [vol(d.rot_z(flags, -s * 0.5), beam) > 0.05 for s in range(720)]
+spans, s0 = [], None
+for i in range(720):
+    if blocked[i] and s0 is None: s0 = i
+    if not blocked[i] and s0 is not None: spans.append((s0 * 0.5, (i - 1) * 0.5)); s0 = None
+if s0 is not None: spans.append((s0 * 0.5, 359.5))
+if len(spans) > 1 and spans[0][0] == 0 and spans[-1][1] == 359.5:    # one span across 0 deg
+    last = spans.pop(); spans[0] = (last[0] - 360, spans[0][1])
+ok = len(spans) == d.N_SLOTS
+for a0, a1 in spans:
+    k = int(round((a0 + d.FLAG_LEAD) / d.SLOT_ANG)) % d.N_SLOTS
+    st = (a0 + d.FLAG_LEAD) - ((a0 + d.FLAG_LEAD + d.SLOT_ANG / 2) % d.SLOT_ANG - d.SLOT_ANG / 2)   # nearest station angle
+    lead, trail = st - a0, a1 - st
+    good = 5.0 <= lead <= 11.0 and trail >= 3.0 and (trail > 14 if k == 0 else trail < 9)
+    ok &= good
+    print("   slot %2d: beam blocked from %6.1f to %6.1f deg -> %4.1f deg before the station, %4.1f after%s" % (
+        k + 1, a0, a1, lead, trail, "" if good else "   <-- CHECK"))
+print("   %d flags seen in a full turn, slot 1's flag the only wide one: %s" % (len(spans), "ok" if ok else "PROBLEM"))
+print("   (the 1 mm model beam crosses the 1.8 mm flag wall at a slant, over 3 deg of rotation: blocking starts 1.5 deg\n"
+      "    earlier and ends 1.5 deg later than the flag's nominal 7 / 5 deg; the firmware's 7 deg is the middle)")

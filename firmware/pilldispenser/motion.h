@@ -1,7 +1,10 @@
-// Motion: carousel stepper (28BYJ-48 + ULN2003), dispense servo, two IR light barriers (home, drop), job runner
+// Motion: carousel stepper (28BYJ-48 + ULN2003), dispense servo, two IR light barriers (index, drop), job runner
 #pragma once
 #include "state.h"
 #include "esp_timer.h"
+#ifdef ARDUINO_ARCH_ESP32
+#include "driver/gpio.h"
+#endif
 
 namespace motion {
 
@@ -15,7 +18,7 @@ static volatile MState state = M_BOOT;
 static volatile bool homed = false;
 static volatile bool abortFlag = false;
 static volatile uint32_t currentJob = 0;
-static uint32_t jobsSinceMark = 0;        // jobs since the home mark was last seen (homing or passing check)
+static uint32_t jobsSinceMark = 0;        // jobs since slot 1's wide flag was last recognised (homing or passing it)
 static char lastError[64] = "";
 static QueueHandle_t cmdQueue;
 
@@ -28,14 +31,32 @@ static volatile int32_t st_left = 0, st_done = 0;
 static volatile int8_t st_dir = 1, st_phaseDir = 1;
 static volatile uint8_t st_phase = 0;
 static volatile uint32_t st_cruise = 1400, st_start = 2600, st_accel = 250;
-static volatile bool st_watch = false, st_stopOnHome = false, st_homePrev = false, st_homeSeen = false;
-static volatile int32_t st_homePos = 0;
-static volatile int st_homeLvl = LOW;        // level of the home input while the flag is in the beam (found by home())
-// homing scan: the flag covers 14 deg of the turn, so the short stretch between two level changes is the flag
-static volatile bool st_scan = false, st_scanFound = false;
-static volatile int st_scanLvl = LOW, st_flagLvl = LOW;
-static volatile int32_t st_scanEdge = 0, st_flagEdge = 0;
-static volatile uint8_t st_scanEdges = 0, st_scanCnt = 0;
+
+// ------------------------------------------------------------------ index light barrier
+// Ten flags under the carousel hub pass the light barrier next to the axle, one per slot. Turning forward, a flag
+// reaches the beam FLAG_LEAD_DEG before its slot stands at the station and still covers the beam there; slot 1's
+// flag is twice as wide (home mark). The step timer records every change of the barrier with the position where it
+// happened. After each move the firmware compares these changes with where the flags must be: the carousel has
+// to arrive exactly where the step count says, at the right slot, or it is corrected or homed again.
+static const int EDGE_DEB = 6;               // a change counts once it has lasted this many steps
+static const int MAX_EDGES = 48;
+static volatile int32_t ed_pos[MAX_EDGES];   // position of the change (first step of the new level)
+static volatile int8_t ed_lvl[MAX_EDGES];    // input level after the change
+static volatile int8_t ed_dir[MAX_EDGES];    // direction of travel
+static volatile uint8_t ed_n = 0;
+static volatile bool ed_overflow = false;
+static volatile int ed_level = HIGH;         // debounced input level
+static volatile uint8_t ed_cnt = 0;
+static volatile uint8_t ed_stopAfter = 0;    // end the move once this many changes are recorded (0 = never)
+static int ed_startLvl = HIGH;               // barrier level when the record was started
+static volatile int st_flagLvl = LOW;        // input level while a flag is in the beam (found by home())
+static int32_t regFlagW = (int32_t)(FLAG_DEG * STEPS_PER_DEG);        // width of a normal flag in steps (measured by home())
+static int32_t homeFlagW = (int32_t)(HOME_FLAG_DEG * STEPS_PER_DEG);  // width of slot 1's flag (measured by home())
+static int32_t flagW[N_SLOTS];               // flag widths measured by the last homing, [0] = slot 1 (for /diag)
+static bool parked = false;                  // standing at a slot that the flags confirmed
+static int restLvl = HIGH;                   // barrier level when the carousel last stopped (idle watch)
+static uint8_t idleOdd = 0;
+static const int32_t POS_TOL = (int32_t)(1.0f * STEPS_PER_DEG);  // arrival accepted within +-1 deg (about 1 mm at the module)
 
 static inline void coils(uint8_t m) {
   digitalWrite(PIN_IN1, m & 1);
@@ -44,7 +65,13 @@ static inline void coils(uint8_t m) {
   digitalWrite(PIN_IN4, (m >> 3) & 1);
 }
 
-static inline bool homeActive() { return digitalRead(PIN_HOME) == st_homeLvl; }
+static int stableHome() {                    // majority of 5 reads, 1 ms in all
+  int n = 0;
+  for (int i = 0; i < 5; i++) { n += digitalRead(PIN_HOME) == HIGH; delayMicroseconds(200); }
+  return n >= 3 ? HIGH : LOW;
+}
+
+static inline bool homeActive() { return digitalRead(PIN_HOME) == st_flagLvl; }
 
 static void stepCb(void *) {
   if (abortFlag || st_left <= 0) { xSemaphoreGive(stepSem); return; }
@@ -53,37 +80,54 @@ static void stepCb(void *) {
   st_pos += st_dir;
   st_left--;
   st_done++;
-  if (st_scan) {
-    if (digitalRead(PIN_HOME) == st_scanLvl) st_scanCnt = 0;
-    else if (++st_scanCnt >= 6) {                    // a change counts once it has lasted 6 steps
-      int32_t edge = st_pos - 5 * st_dir;
-      if (st_scanEdges > 0 && abs(edge - st_scanEdge) < (int32_t)(STEPS_PER_REV / 5)) {
-        st_flagLvl = st_scanLvl;                     // the stretch that just ended was short: that was the flag
-        st_flagEdge = st_scanEdge;
-        st_scanFound = true;
-        st_left = 0;
-      }
-      st_scanLvl = !st_scanLvl;
-      st_scanEdge = edge;
-      st_scanCnt = 0;
-      if (st_scanEdges < 250) st_scanEdges++;
+  int raw = digitalRead(PIN_HOME);
+  if (raw == ed_level) ed_cnt = 0;
+  else if (++ed_cnt >= EDGE_DEB) {
+    ed_level = raw;
+    ed_cnt = 0;
+    if (ed_n < MAX_EDGES) {
+      ed_pos[ed_n] = st_pos - (EDGE_DEB - 1) * st_dir;
+      ed_lvl[ed_n] = (int8_t)raw;
+      ed_dir[ed_n] = st_dir;
+      ed_n++;
+    } else {
+      ed_overflow = true;
     }
-  }
-  if (st_watch) {
-    bool on = homeActive();
-    if (on && !st_homePrev && st_dir > 0) {          // leading edge of the flag, seen while moving forward
-      st_homeSeen = true;
-      st_homePos = st_pos;
-      if (st_stopOnHome) st_left = 0;
-    }
-    st_homePrev = on;
+    if (ed_stopAfter && ed_n >= ed_stopAfter) st_left = 0;
   }
   int32_t k = st_done < st_left ? st_done : st_left;   // distance to the nearer end of the move -> trapezoid ramp
   uint32_t us = (k >= (int32_t)st_accel) ? st_cruise : st_start - (st_start - st_cruise) * (uint32_t)k / st_accel;
   esp_timer_start_once(stepTimer, us);
 }
 
-static bool runSteps(int32_t n, uint32_t cruise, uint32_t start, uint32_t accel, bool watch, bool stopOnHome) {
+// start a new record of barrier changes (the moves that follow append to it)
+static void edgesBegin() {
+  ed_n = 0;
+  ed_overflow = false;
+  ed_cnt = 0;
+  ed_stopAfter = 0;
+  ed_level = stableHome();
+  ed_startLvl = ed_level;
+}
+
+// a move has ended: a change that happened in its last few steps has not been confirmed by the debounce yet.
+// The carousel stands still now, so read the barrier properly and record the change with this move's direction.
+static void edgesFlush() {
+  int lvl = stableHome();
+  ed_cnt = 0;
+  if (lvl == ed_level) return;
+  ed_level = lvl;
+  if (ed_n < MAX_EDGES) {
+    ed_pos[ed_n] = st_pos;
+    ed_lvl[ed_n] = (int8_t)lvl;
+    ed_dir[ed_n] = st_dir;
+    ed_n++;
+  } else {
+    ed_overflow = true;
+  }
+}
+
+static bool runSteps(int32_t n, uint32_t cruise, uint32_t start, uint32_t accel) {
   if (n == 0) return true;
   st_dir = n > 0 ? 1 : -1;
   st_phaseDir = st_dir * cfg.car_dir;
@@ -92,10 +136,6 @@ static bool runSteps(int32_t n, uint32_t cruise, uint32_t start, uint32_t accel,
   st_cruise = cruise;
   st_start = start > cruise ? start : cruise;
   st_accel = accel ? accel : 1;
-  st_watch = watch;
-  st_stopOnHome = stopOnHome;
-  st_homeSeen = false;
-  st_homePrev = homeActive();
   xSemaphoreTake(stepSem, 0);
   coils(HALFSTEP[st_phase]);
   esp_timer_start_once(stepTimer, st_start);
@@ -104,89 +144,267 @@ static bool runSteps(int32_t n, uint32_t cruise, uint32_t start, uint32_t accel,
   esp_timer_stop(stepTimer);
   vTaskDelay(pdMS_TO_TICKS(40));
   coils(0);                                   // gearbox holds the carousel; no need to heat the coils
+  edgesFlush();
   return ok && !abortFlag;
 }
+
+static bool run(int32_t n) { return runSteps(n, cfg.step_us_cruise, cfg.step_us_start, cfg.accel_steps); }
 
 static void fail(const char *msg) {
   copyStr(lastError, sizeof(lastError), msg);
   addEvent("error", msg);
 }
 
-// home mark seen during a normal move: compare with where it should be, correct silently lost steps
-static bool resyncCheck() {
-  if (!st_homeSeen) return false;
-  st_homeSeen = false;
-  jobsSinceMark = 0;
-  double rev = STEPS_PER_REV;
-  double e = fmod((double)st_homePos - (double)cfg.home_offset, rev);
-  if (e > rev / 2) e -= rev;
-  if (e < -rev / 2) e += rev;
-  if (fabs(e) > STEPS_PER_SLOT * 0.04) {      // more than ~1.8 deg off
-    st_pos -= (int32_t)lround(e);
-    char buf[64];
-    snprintf(buf, sizeof(buf), "position corrected by %ld steps at home mark", (long)lround(e));
-    addEvent("resync", buf);
-    return true;
+// the carousel has come to rest: remember the barrier level, the idle watch compares against it
+static void settle() {
+  restLvl = stableHome();
+  idleOdd = 0;
+}
+
+// ------------------------------------------------------------------ positions of the flags
+static inline int32_t wrapRev(int32_t p) {    // into -REV/2 .. +REV/2
+  double r = fmod((double)p, (double)STEPS_PER_REV);
+  if (r >= STEPS_PER_REV / 2) r -= STEPS_PER_REV;
+  if (r < -STEPS_PER_REV / 2) r += STEPS_PER_REV;
+  return (int32_t)lround(r);
+}
+static inline long flagIndexAt(int32_t pos) {       // number of the last leading edge at or before pos (any integer)
+  return (long)floor(((double)pos - cfg.home_offset) / STEPS_PER_SLOT);
+}
+static inline int32_t leadPos(long k) { return (int32_t)lround(cfg.home_offset + (double)k * STEPS_PER_SLOT); }
+static inline bool isSlot1(long k) { return ((k % N_SLOTS) + N_SLOTS) % N_SLOTS == 0; }
+// Number of the last leading edge passed at position pos, given whether the barrier sees a flag there. The step
+// count alone can be off by the gear backlash (after a stop or a raw move backwards) or by a few lost steps; the
+// barrier level settles that, because the flags and the gaps between them are much wider than this uncertainty.
+static long flagCountAt(int32_t pos, bool inFlag) {
+  long k = flagIndexAt(pos);
+  int32_t into = pos - leadPos(k);                   // steps past that leading edge
+  int32_t w = isSlot1(k) ? homeFlagW : regFlagW;
+  if ((into < w) == inFlag) return k;
+  if (inFlag) return (into - w) < ((int32_t)STEPS_PER_SLOT - into) ? k : k + 1;   // still in flag k, or already in the next
+  return into < w - into ? k - 1 : k;                // not yet at flag k, or already past it
+}
+static int32_t leadToStation() {                   // steps from a flag's leading edge to its slot at the station
+  double d = fmod(-(double)cfg.home_offset, (double)STEPS_PER_SLOT);
+  if (d < 0) d += STEPS_PER_SLOT;
+  return (int32_t)lround(d);
+}
+// the last run of every slot move: long enough to take up the gear backlash and then cross the leading edge of the
+// target slot's flag, so that every arrival is measured against that edge
+static int32_t approachSteps() { return cfg.backlash + leadToStation() + (int32_t)(2.5f * STEPS_PER_DEG); }
+
+// "slot 1 stands at the station now": is that consistent with the flags? new_offset = where slot 1's leading edge
+// would be. The station has to lie inside slot 1's flag, at least 2 deg from both of its edges (normal width).
+static bool calibrationPlausible(int32_t newOffset) {
+  int32_t lo = -(int32_t)((FLAG_DEG - 2.0f) * STEPS_PER_DEG), hi = -(int32_t)(2.0f * STEPS_PER_DEG);
+  return newOffset >= lo && newOffset <= hi;
+}
+
+// "slot 1 stands exactly at the station now" (after jogging it there): take this position as the reference.
+// Refused unless the carousel is homed and the station lies well inside slot 1's flag.
+static bool calibrateSlot1() {
+  if (!homed) return false;
+  int32_t newOffset = wrapRev(cfg.home_offset - st_pos);
+  if (!calibrationPlausible(newOffset) || stableHome() != st_flagLvl) return false;
+  cfg.home_offset = newOffset;
+  st_pos = 0;
+  parked = false;
+  return true;
+}
+
+// ------------------------------------------------------------------ homing
+// Turn forward a little more than one revolution and record the light barrier. The flags are the shorter of the
+// two levels (they cover a third of the turn), so the output polarity of the light barrier does not matter.
+// Slot 1's flag is the one that is twice as wide. Its leading edge is at home_offset.
+static bool home() {
+  state = M_HOMING;
+  homed = false;
+  parked = false;
+  edgesBegin();
+  ed_stopAfter = 2 * N_SLOTS + 1;                 // 20 complete stretches after the first change = one revolution
+  bool ran = run((int32_t)(STEPS_PER_REV * 1.15f));
+  ed_stopAfter = 0;
+  if (!ran) { fail(abortFlag ? "homing aborted" : "homing timed out"); return false; }
+  char msg[64];
+  int n = ed_n;
+  if (n == 0) {
+    fail(ed_level == HIGH ? "index barrier never changed (HIGH): jammed? see-through flags?"
+                          : "index barrier never changed (LOW): jammed? emitter unplugged?");
+    return false;
   }
+  if (n < 2 * N_SLOTS + 1) {
+    snprintf(msg, sizeof(msg), "only %d of 20 flag edges in a turn: jam, slip or broken flag?", n - 1);
+    fail(msg);
+    return false;
+  }
+  int32_t sum[2] = {0, 0};
+  for (int i = 0; i < 2 * N_SLOTS; i++) sum[ed_lvl[i] == HIGH ? 1 : 0] += ed_pos[i + 1] - ed_pos[i];
+  int32_t total = sum[0] + sum[1];
+  int lvl = sum[1] < sum[0] ? HIGH : LOW;          // flags: the level that covers less of the turn
+  for (int i = 0; i < 2 * N_SLOTS; i++) {           // a gap twice as long as normal: a flag is missing or lets light through
+    int32_t len = ed_pos[i + 1] - ed_pos[i];
+    if (ed_lvl[i] != lvl && len > 2 * (STEPS_PER_SLOT - FLAG_DEG * STEPS_PER_DEG)) {
+      snprintf(msg, sizeof(msg), "index flags: a gap of %d deg - flag broken off or see-through?", (int)(len / STEPS_PER_DEG));
+      fail(msg);
+      return false;
+    }
+  }
+  if (fabs(total - STEPS_PER_REV) > STEPS_PER_REV * 0.04f) {
+    snprintf(msg, sizeof(msg), "homing: a turn took %d%% of the expected steps - slipping?", (int)(100.0f * total / STEPS_PER_REV));
+    fail(msg);
+    return false;
+  }
+  int32_t w[N_SLOTS], lead[N_SLOTS], sorted[N_SLOTS];
+  int nf = 0;
+  for (int i = 0; i < 2 * N_SLOTS; i++) {
+    if (ed_lvl[i] != lvl) continue;
+    if (nf < N_SLOTS) { w[nf] = ed_pos[i + 1] - ed_pos[i]; lead[nf] = ed_pos[i]; }
+    nf++;
+  }
+  if (nf != N_SLOTS) { fail("index flags not recognised (pattern)"); return false; }
+  int hi = 0;
+  for (int i = 0; i < N_SLOTS; i++) { sorted[i] = w[i]; if (w[i] > w[hi]) hi = i; }
+  for (int i = 1; i < N_SLOTS; i++)                 // insertion sort, ten values
+    for (int j = i; j > 0 && sorted[j] < sorted[j - 1]; j--) { int32_t t = sorted[j]; sorted[j] = sorted[j - 1]; sorted[j - 1] = t; }
+  int32_t med = sorted[N_SLOTS / 2 - 1];            // a normal flag (the wide one is the largest value)
+  bool ok = med > 5.0f * STEPS_PER_DEG && med < 20.0f * STEPS_PER_DEG && w[hi] * 2 >= med * 3;
+  for (int i = 0; i < N_SLOTS && ok; i++) {
+    if (i != hi && (w[i] * 10 < med * 6 || w[i] * 10 > med * 14)) ok = false;
+    int32_t gap = lead[(i + 1) % N_SLOTS] - lead[i] + (i == N_SLOTS - 1 ? total : 0);
+    if (fabs(gap - STEPS_PER_SLOT) > STEPS_PER_SLOT * 0.1f) ok = false;
+  }
+  if (!ok) {
+    snprintf(msg, sizeof(msg), "index flags not recognised (widest %d, normal %d steps)", (int)w[hi], (int)med);
+    fail(msg);
+    return false;
+  }
+  for (int i = 0; i < N_SLOTS; i++) flagW[(i - hi + N_SLOTS) % N_SLOTS] = w[i];
+  regFlagW = med;
+  homeFlagW = w[hi];
+  st_flagLvl = lvl;
+  st_pos = wrapRev(cfg.home_offset + (st_pos - lead[hi]));
+  homed = true;
+  jobsSinceMark = 0;
+  settle();
+  addEvent("homed", lvl == LOW ? "carousel homed (flags read LOW)" : "carousel homed (flags read HIGH)");
+  return true;
+}
+
+// ------------------------------------------------------------------ slot moves, checked against the flags
+enum Verdict : uint8_t { V_OK, V_SHIFTED, V_LOST };
+
+// slot standing at the station according to the step count (0-based)
+static int slotAtStation() {
+  long s = lround((double)st_pos / STEPS_PER_SLOT) % N_SLOTS;
+  if (s < 0) s += N_SLOTS;
+  return (int)s;
+}
+
+// Go through the barrier changes recorded since edgesBegin(). Which flag an edge belongs to is counted from the start
+// position (confirmed by the previous move or by homing, and guarded by the idle watch since): every leading edge
+// passed forward adds one, every leading edge passed backward takes one away. A flag that passed completely forward
+// must have the right width (slot 1's is wide), which checks the count itself. The last change must be the leading
+// edge of the target slot's flag, passed forward, with the barrier still in that flag. err = how far that edge was
+// from where the step count expected it (positive: the carousel lags behind the step count, steps were lost).
+static Verdict checkArrival(int32_t start, int32_t target, int32_t &err, char *why, size_t whyLen) {
+  err = 0;
+  if (ed_overflow) { snprintf(why, whyLen, "too many light barrier changes"); return V_LOST; }
+  long k = flagCountAt(start, ed_startLvl == st_flagLvl), kT = flagIndexAt(target), lastK = 0;
+  int lastIdx = -1, n = ed_n;
+  for (int i = 0; i < n; i++) {
+    bool toFlag = ed_lvl[i] == st_flagLvl;
+    if (ed_dir[i] > 0 && toFlag) {                         // leading edge, forward
+      k++;
+      lastK = k;
+      lastIdx = i;
+    } else if (ed_dir[i] > 0) {                            // trailing edge, forward: a whole flag went by
+      if (lastIdx == i - 1 && lastIdx >= 0) {
+        bool wide = (ed_pos[i] - ed_pos[lastIdx]) * 2 > regFlagW * 3;
+        if (wide != isSlot1(lastK)) {
+          snprintf(why, whyLen, "flag of slot %ld looks %s", ((lastK % N_SLOTS) + N_SLOTS) % N_SLOTS + 1, wide ? "wide" : "narrow");
+          return V_LOST;
+        }
+        if (wide) jobsSinceMark = 0;                       // slot 1 recognised: the count is right
+      }
+    } else if (!toFlag) {                                  // leading edge, backward
+      k--;
+    }
+  }
+  if (lastIdx < 0) { snprintf(why, whyLen, "no flag reached the barrier - jammed?"); return V_LOST; }
+  if (lastK < kT) { snprintf(why, whyLen, "carousel stopped short of the slot - jammed?"); return V_LOST; }
+  if (lastK > kT || lastIdx != n - 1 || stableHome() != st_flagLvl) {
+    snprintf(why, whyLen, "carousel went past the slot");
+    return V_LOST;
+  }
+  err = ed_pos[lastIdx] - leadPos(lastK);
+  if (labs(err) <= POS_TOL) return V_OK;
+  snprintf(why, whyLen, "slot reached %ld steps off, corrected", (long)err);
+  return V_SHIFTED;
+}
+
+// Bring slot `slot` (0-based) to the station and confirm it with its flag. Every call ends with a forward approach
+// across the leading edge of that slot's flag, also when the slot is at the station already. A small offset is
+// corrected; if the flags do not fit, the carousel homes again. Returns false only if the position cannot be confirmed.
+static bool gotoSlot(int slot) {
+  char why[56];
+  for (int attempt = 0; attempt < 4; attempt++) {
+    if (abortFlag) return false;
+    if (!homed && !home()) return false;
+    state = M_MOVING;
+    double cur = (double)st_pos / STEPS_PER_SLOT;
+    double t = slot + N_SLOTS * round((cur - slot) / N_SLOTS);
+    int32_t target = (int32_t)lround(t * STEPS_PER_SLOT);
+    parked = false;                                        // even if it is there already: back off and approach again
+    int32_t start = st_pos, delta = target - st_pos, app = approachSteps();
+    edgesBegin();
+    bool ok = delta >= app ? run(delta) : (run(delta - app) && run(app));
+    if (!ok) {
+      if (!abortFlag) fail("carousel move timed out");
+      return false;
+    }
+    int32_t err = 0;
+    Verdict v = checkArrival(start, target, err, why, sizeof(why));
+    if (v == V_OK) {
+      st_pos -= err;                                       // fine correction, within POS_TOL
+      parked = true;
+      settle();
+      return true;
+    }
+    if (v == V_SHIFTED) {
+      st_pos -= err;
+      addEvent("resync", why, slot + 1);
+    } else {
+      homed = false;
+      char msg[72];
+      snprintf(msg, sizeof(msg), "%s - homing again", why);
+      addEvent("resync", msg, slot + 1);
+    }
+  }
+  fail("carousel position not confirmed by the index flags");
   return false;
 }
 
-// slotF: which slot index (0-based, may be fractional) should stand at the station
-static bool gotoSlot(double slotF) {
-  for (int pass = 0; pass < 2; pass++) {
-    double cur = (double)st_pos / STEPS_PER_SLOT;
-    double t = slotF + N_SLOTS * round((cur - slotF) / N_SLOTS);
-    int32_t delta = (int32_t)lround(t * STEPS_PER_SLOT) - st_pos;
-    if (delta == 0) return true;
-    bool ok;
-    if (delta < 0) {                          // always finish in + direction: gear backlash ends up on the same side
-      ok = runSteps(delta - cfg.backlash, cfg.step_us_cruise, cfg.step_us_start, cfg.accel_steps, false, false);
-      if (ok) ok = runSteps(cfg.backlash, cfg.step_us_cruise, cfg.step_us_start, cfg.accel_steps, true, false);
-    } else {
-      ok = runSteps(delta, cfg.step_us_cruise, cfg.step_us_start, cfg.accel_steps, true, false);
-    }
-    if (!ok) return false;
-    if (!resyncCheck()) return true;          // position was right, done
-  }
-  return true;
+// Home, then go to the slot nearest to where homing ended: the carousel never rests right at a flag edge, and the
+// homing is confirmed by a normal checked arrival.
+static bool homeAndPark() {
+  if (!home()) return false;
+  return gotoSlot(slotAtStation());
 }
 
-static bool home() {
-  state = M_HOMING;
-  uint32_t fast = cfg.step_us_cruise, slow = cfg.step_us_cruise * 2;
-  // 1) Turn forward until the flag has passed the light barrier once completely. Which level means "blocked"
-  //    is not assumed: the flag is simply the short stretch, so either output polarity works.
-  st_scanLvl = digitalRead(PIN_HOME);
-  st_scanEdges = 0;
-  st_scanCnt = 0;
-  st_scanFound = false;
-  st_scan = true;
-  runSteps((int32_t)(STEPS_PER_REV * 1.25), fast, cfg.step_us_start, cfg.accel_steps, false, false);
-  st_scan = false;
-  if (abortFlag) { fail("homing aborted"); return false; }
-  if (!st_scanFound) {
-    homed = false;
-    fail(st_scanEdges ? "home flag not recognised (stray light? loose plug?)"
-                      : st_scanLvl == HIGH ? "home light barrier stuck HIGH - check plugs and stepper"
-                                           : "home light barrier stuck LOW - check plugs, alignment");
-    return false;
-  }
-  st_homeLvl = st_flagLvl;
-  // 2) back to just before its leading edge, then a slow approach for a repeatable edge
-  int32_t back = st_pos - st_flagEdge + 400;
-  bool ok = runSteps(-back, fast, cfg.step_us_start, 100, false, false) && runSteps(900, slow, slow, 1, true, true);
-  if (!ok || !st_homeSeen) {
-    homed = false;
-    fail("home mark lost on second approach");
-    return false;
-  }
-  st_homeSeen = false;
-  st_pos = cfg.home_offset;
-  homed = true;
-  jobsSinceMark = 0;
-  addEvent("homed", st_homeLvl == LOW ? "carousel homed (flag reads LOW)" : "carousel homed (flag reads HIGH)");
-  return true;
+// Called about every 20 ms while nothing moves. The carousel stands still, so the light barrier must not change.
+// If it does, someone turned the carousel: its position is unknown until it has homed again.
+static void idleCheck() {
+  if (!homed) { idleOdd = 0; return; }
+  if (stableHome() == restLvl) { idleOdd = 0; return; }
+  if (++idleOdd < 3) return;
+  idleOdd = 0;
+  homed = false;
+  parked = false;
+  addEvent("moved", "carousel turned while idle - it homes before the next move");
 }
+
+// still standing where the last move confirmed it? (checked before every stroke)
+static bool stillParked() { return homed && parked && stableHome() == restLvl; }
 
 // ------------------------------------------------------------------ servo
 static int32_t sv_us = 0;
@@ -329,7 +547,8 @@ static int stroke(int attempt) {
 }
 
 // ------------------------------------------------------------------ jobs
-static uint32_t enqueueJob(const Item *items, uint8_t n, const char *source, const char *requestId, bool *existing = nullptr) {
+static uint32_t enqueueJob(const Item *items, uint8_t n, const char *source, const char *requestId, bool *existing = nullptr,
+                           uint8_t profile = 1) {
   Lock l;
   if (existing) *existing = false;
   if (requestId && requestId[0]) {
@@ -350,6 +569,7 @@ static uint32_t enqueueJob(const Item *items, uint8_t n, const char *source, con
   for (uint8_t i = 0; i < n; i++) { slot->items[i] = items[i]; slot->items[i].dispensed = 0; slot->items[i].missed = 0; }
   copyStr(slot->source, sizeof(slot->source), source);
   copyStr(slot->request_id, sizeof(slot->request_id), requestId);
+  slot->profile = profile;
   slot->t_created = nowUnix();
   return slot->id;
 }
@@ -369,11 +589,10 @@ static void runJob(Job &j) {
   addEvent("job_started", j.source, -1, j.id);
   servoWrite(cfg.servo_park_us);               // make sure the prongs are level before the carousel moves
   vTaskDelay(pdMS_TO_TICKS(350));
-  // lost steps are only noticed when the home mark passes the sensor; if that has not happened
-  // for a while, home again before dispensing
+  // every arrival is checked against its slot's flag; which flag it is, is counted. Slot 1's wide flag checks the
+  // count itself: if it has not been recognised for a while, home again before dispensing
   if (cfg.rehome_jobs > 0 && jobsSinceMark >= (uint32_t)cfg.rehome_jobs) homed = false;
   jobsSinceMark++;
-  if (!homed && !home()) fatal = true;
   bool done[MAX_ITEMS] = {false};
   for (uint8_t k = 0; k < j.n && !fatal && !abortFlag; k++) {
     // next line = the one whose slot is closest to the station right now
@@ -388,9 +607,17 @@ static void runJob(Job &j) {
     done[best] = true;
     Item &it = j.items[best];
     state = M_MOVING;
-    if (!gotoSlot(it.slot)) { if (!abortFlag) { fail("carousel move failed"); fatal = true; } break; }
+    if (!gotoSlot(it.slot)) { if (!abortFlag) fatal = true; break; }     // gotoSlot has reported why
     state = M_DISPENSING;
     while (it.dispensed < it.count && !abortFlag) {
+      if (!stillParked()) {                    // the light barrier changed since the arrival: confirm the slot again
+        homed = false;
+        parked = false;
+        addEvent("moved", "carousel moved at the station - homing again", it.slot + 1, j.id);
+        state = M_MOVING;
+        if (!gotoSlot(it.slot)) { if (!abortFlag) fatal = true; break; }
+        state = M_DISPENSING;
+      }
       int got = 0;
       for (int a = 0; a < cfg.retries && got == 0 && !abortFlag; a++) got = stroke(a);
       if (got < 0) { fail("drop light barrier failed its test - plugs? chute blocked?"); fatal = true; break; }
@@ -420,6 +647,7 @@ static void runJob(Job &j) {
     else if (abortFlag && !any) { j.state = JOB_CANCELLED; copyStr(j.error, sizeof(j.error), "stopped"); }
     else { j.state = JOB_PARTIAL; copyStr(j.error, sizeof(j.error), abortFlag ? "stopped" : "one or more slots empty or jammed"); }
     j.t_done = nowUnix();
+    if (any) cupProfile = j.profile;           // saved with the counts below
   }
   addEvent(j.state == JOB_DONE ? "job_done" : j.state == JOB_FAILED ? "job_failed" : "job_partial", j.error, -1, j.id);
   saveConfig();                                // remaining counts
@@ -439,24 +667,28 @@ static void runCmd(const Cmd &c) {
   switch (c.type) {
     case CMD_HOME:
       servoPark();
-      state = home() ? M_IDLE : M_ERROR;
+      state = homeAndPark() || abortFlag ? M_IDLE : M_ERROR;
       break;
     case CMD_PRESENT:                          // bring a slot to the refill position
     case CMD_GOTO: {
       servoPark();
-      if (!homed && !home()) { state = M_ERROR; break; }
+      int target = (int)((c.arg + (c.type == CMD_PRESENT ? cfg.refill_slots : 0)) % N_SLOTS);
+      bool ok = gotoSlot(target);
+      state = ok || abortFlag ? M_IDLE : M_ERROR;
+      break;
+    }
+    case CMD_JOG: {                            // raw steps, for calibration (not checked against the flags)
+      servoPark();
       state = M_MOVING;
-      double target = c.arg + (c.type == CMD_PRESENT ? cfg.refill_slots : 0);
-      gotoSlot(target);
+      parked = false;
+      edgesBegin();
+      uint32_t us = cfg.step_us_cruise * 2;
+      // backwards: go a little further and come back, so the jog ends like every slot move, gear teeth pressed forward
+      if (runSteps(c.arg < 0 ? c.arg - cfg.backlash : c.arg, us, us, 1) && c.arg < 0) runSteps(cfg.backlash, us, us, 1);
+      settle();
       state = M_IDLE;
       break;
     }
-    case CMD_JOG:                              // raw steps, for calibration
-      servoPark();
-      state = M_MOVING;
-      runSteps(c.arg, cfg.step_us_cruise * 2, cfg.step_us_cruise * 2, 1, false, false);
-      state = M_IDLE;
-      break;
     case CMD_SERVO:                            // raw pulse width, for calibration
       servoTo(c.arg);
       break;
@@ -474,19 +706,26 @@ static void task(void *) {
   pinMode(PIN_BEAM, INPUT_PULLUP);
   pinMode(PIN_BEAM_LED, OUTPUT);
   digitalWrite(PIN_BEAM_LED, LOW);
-  if (PIN_BUZZER >= 0) { pinMode(PIN_BUZZER, OUTPUT); digitalWrite(PIN_BUZZER, LOW); }
+  if (PIN_BUZZER >= 0) {
+    pinMode(PIN_BUZZER, OUTPUT); digitalWrite(PIN_BUZZER, LOW);
+#ifdef ARDUINO_ARCH_ESP32
+    // strongest drive, 40 mA instead of the default 20 mA: the active buzzer hangs on the pin directly
+    gpio_set_drive_capability((gpio_num_t)PIN_BUZZER, GPIO_DRIVE_CAP_3);
+#endif
+  }
   ledcAttach(PIN_SERVO, 50, 14);
   servoWrite(cfg.servo_park_us);
   vTaskDelay(pdMS_TO_TICKS(700));
-  state = home() ? M_IDLE : M_ERROR;
+  state = homeAndPark() ? M_IDLE : M_ERROR;
   for (;;) {
     Cmd c;
-    if (xQueueReceive(cmdQueue, &c, pdMS_TO_TICKS(100)) == pdTRUE) {
+    if (xQueueReceive(cmdQueue, &c, pdMS_TO_TICKS(20)) == pdTRUE) {
       runCmd(c);
       continue;
     }
     Job *j = nextQueued();
     if (j) { runJob(*j); continue; }
+    idleCheck();                                               // nobody may turn the carousel unnoticed
     if (sv_on && millis() - sv_lastMove > 2500) servoOff();   // quiet and cool while idle
   }
 }
@@ -512,10 +751,5 @@ static bool send(CmdType t, int32_t arg = 0) {
   return xQueueSend(cmdQueue, &c, 0) == pdTRUE;
 }
 
-static int slotAtStation() {
-  long s = lround((double)st_pos / STEPS_PER_SLOT) % N_SLOTS;
-  if (s < 0) s += N_SLOTS;
-  return (int)s;
-}
 
 }  // namespace motion

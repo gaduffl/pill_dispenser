@@ -5,9 +5,13 @@ A 3D-printable, Wi-Fi connected dispenser for pills and supplements. Ten passive
 module means printing plastic only. An app talks to it over a small REST API. The electronics plug
 together: nothing is soldered.
 
-**Status: design revision 0.2, not yet built.** The geometry was checked in CAD (collisions, fits,
+**Status: design revision 0.3, not yet built.** The geometry was checked in CAD (collisions, fits,
 pill path) and the firmware logic was exercised in a host simulation, but nothing has been printed
 or run on real hardware. Expect a tuning round. See [What was checked](#what-was-checked).
+
+New in 0.3: an index flag for every slot, so the firmware confirms which module stands at the station
+before the servo moves; two user profiles with a button each; USB-C socket at the back; pockets for the
+breadboard and the driver board; a step-by-step [assembly and wiring guide](docs/assembly.md).
 
 ![overview](docs/img/overview.png)
 
@@ -17,7 +21,7 @@ or run on real hardware. Expect a tuning round. See [What was checked](#what-was
 |---|---|
 | **Modules** | Wedge-shaped hoppers with a horizontal metering roller at the bottom. The roller has one pocket that fits exactly one pill. No motor, no electronics, no screws. |
 | **Roller + gate** | The only pill-specific parts, always used as a pair. Five presets are included; `cad/make_roller.py` generates a pair for any pill up to 30 x 12.5 x 12.8 mm. |
-| **Carousel** | A plate on two 608 bearings, turned by a 28BYJ-48 stepper (4:1 gear). It brings the wanted module to the station at the front. A flag under the hub passes through a light barrier once per turn: that is the home position. |
+| **Carousel** | A plate on two 608 bearings, turned by a 28BYJ-48 stepper (4:1 gear). It brings the wanted module to the station at the front. Ten flags under the hub, one per slot, pass through a light barrier: every arrival is measured against the flag of the slot that should arrive, and the servo only moves when it matches. Slot 1's flag is twice as wide; that marks home. |
 | **Station** | One MG90S servo with a two-prong drive dog. Each roller has a flat "tooth" at its outer end; when a module arrives, the tooth slides over the prongs. The servo turns the roller about 145 degrees and back. |
 | **Chute** | A V-shaped slide under the station. A second light barrier 1.6 mm above the bottom of the V sees every pill, so the firmware knows whether a pill really came out, retries if not, and reports an empty or jammed module. |
 | **Cup** | Sits under the station, pulls out to the front. |
@@ -56,14 +60,14 @@ Electronics. Everything plugs into a small breadboard, no soldering:
 | 1 | Seeed Studio XIAO ESP32-C6 with pre-soldered headers | sold as its own version, SKU 102010636. XIAO ESP32-S3 works with the same pin names. Not the C3 (boot pins). |
 | 1 | 28BYJ-48 stepper, 5 V, with ULN2003 driver board | the usual kit; the motor plugs into the board |
 | 1 | MG90S micro servo, 180 degree version | SG90 fits too, MG90S has metal gears |
-| 2 | IR break-beam sensor pair with 3 mm LEDs, wires with header ends | Adafruit 2167 or the same part elsewhere: two black housings 20 x 10 x 8 mm per pair. One pair is the home sensor, one counts pills. |
+| 2 | IR break-beam sensor pair with 3 mm LEDs, wires with header ends | Adafruit 2167 or the same part elsewhere: two black housings 20 x 10 x 8 mm per pair, 23 cm wires with male pins. One pair reads the index flags, one counts pills. |
 | 1 | Mini breadboard (170 points) | |
-| 1 set | Jumper wires, male-male and male-female | about 10 of each |
-| 1 | USB-C cable and 5 V / 2 A supply | powers everything |
-| opt. | Push button, active buzzer (3.3 V), servo extension lead 15 cm | |
+| 1 | Electrolytic capacitor 470 uF, 16 V or more | across 5 V and GND, keeps the servo's start from resetting the ESP32 |
+| 1 set | Jumper wires, male-male and female-male | 9 male-male (6 short ones for links on the board, 3 to extend the servo cable), 6 female-male |
+| 1 | USB-C cable and 5 V supply, 3 A recommended | powers everything; plugs in at the back |
+| opt. | one or two 12 mm panel push buttons with leads, active buzzer for 3.3 V (30 mA or less) | a button per person (right: profile 1, left: profile 2) releases that person's due doses; the buzzer beeps once when a dose is done, three times when it had a problem |
 
-No resistors and no capacitor: the receivers of the light barriers work with the pull-ups inside
-the ESP32.
+No resistors: the receivers of the light barriers work with the pull-ups inside the ESP32.
 
 Hardware:
 
@@ -81,6 +85,10 @@ Hardware:
 All parts are exported in print orientation and need **no supports**. PETG is recommended
 (stiffer studs, less wear on the rollers); PLA works. 0.4 mm nozzle, 0.2 mm layers, 3 walls,
 15 % infill. Largest part: 212 mm, so a 220 mm bed is enough (designed with a 256 mm bed in mind).
+
+Print the **carousel and the chute in a dark, opaque colour** (black or dark grey): the index flags and the
+chute walls must block the infrared light of the light barriers. Light or translucent filament can let
+enough of it through that a light barrier never reads "blocked".
 
 | File (`stl/`) | Qty | Filament | Notes |
 |---|---|---|---|
@@ -123,59 +131,46 @@ when that applies.
 
 ## Wiring
 
-Everything runs from the 5 V of the USB-C cable plugged into the XIAO. The XIAO sits across the
-middle of the breadboard. Use four of the free rows as rails: one for 5 V, one for 3.3 V, two for
-GND (joined by a jumper), each fed by a jumper from the XIAO pin of that name.
+Everything runs from the 5 V of the USB-C cable, which plugs into the XIAO through an opening in the
+back wall. The breadboard sits in a pocket at the back of the base, the XIAO at its outer end; three
+free columns of the breadboard serve as rails for 5 V, 3.3 V and GND. The
+[assembly guide](docs/assembly.md#8-wiring-hole-by-hole) gives every wire hole by hole:
+
+![breadboard wiring](docs/img/wiring.svg)
 
 | XIAO pin | Goes to |
 |---|---|
-| 5V | ULN2003 board `+`, servo red |
-| GND | ULN2003 board `-`, servo brown, the black wire of all four light-barrier halves |
-| 3V3 | red wire of both receivers (the halves with three wires), red wire of the home emitter |
+| 5V | ULN2003 board `+`, servo red, capacitor `+` |
+| GND | ULN2003 board `-`, servo brown, the black wire of all four light-barrier halves, capacitor `-` |
+| 3V3 | red wire of both receivers (the halves with three wires), red wire of the index emitter |
 | D0 | signal wire (white) of the receiver in the chute |
 | D1 | signal wire (white) of the receiver under the carousel |
-| D4 | red wire of the emitter in the chute |
-| D2 | optional button to GND |
+| D2 | optional button 1 (profile 1, right-hand wall) to GND |
 | D3 | servo orange (signal) |
-| D6 | optional buzzer `+` |
+| D4 | optional button 2 (profile 2, left-hand wall) to GND |
+| D5 | optional buzzer `+` |
+| D6 | red wire of the emitter in the chute |
 | D7, D8, D9, D10 | ULN2003 IN1, IN2, IN3, IN4 |
 
-The emitter in the chute is fed from D4 on purpose. Before every stroke the firmware switches it
+The emitter in the chute is fed from D6 on purpose. Before every stroke the firmware switches it
 off and on and checks that the receiver follows. A loose plug, two halves that do not face each
 other, or a pill lying in the chute are noticed before a pill is released, not after. The same test
 tells the firmware which level means "blocked", so it does not matter which way round a particular
-light barrier switches. An emitter draws about 10 mA at 3.3 V, which a pin can supply.
+light barrier switches. An emitter draws about 10 mA at 3.3 V, which a pin can supply. D6 is also the
+UART transmit pin and chatters while the board starts; for the emitter that is a harmless flicker.
 
-If the ESP32 resets when the servo starts, the supply or the cable is too weak. A 470 uF capacitor
-pushed into the 5 V and GND rails (long leg to 5 V) cures that; so does a shorter USB cable.
+The 470 uF capacitor across 5 V and GND is part of the build: without it, the servo's starting
+current can reset the ESP32.
 
 ## Assembly
 
-1. **Carousel.** Press one 608 bearing into each end of the hub.
-2. **Base.** Push the M8 bolt up through the floor (the head sits in the hex pocket). Drop the
-   stepper between its two posts, shaft towards the centre, fix with 2 x M3 x 10. Press the pinion
-   onto the shaft until it stops.
-3. **Sensors.** Push the two halves of one light barrier into the two cradles next to the centre
-   pillar, lens facing lens. Push the halves of the other one into the pockets in the two sides of
-   the chute, lens first, then drop the chute into its seat behind the cup bay. If a half sits
-   loose, a strip of tape around it is enough.
-4. **Electronics.** Stick the breadboard onto the marked rectangle with the XIAO's USB-C socket
-   facing the opening in the wall. Wire as in the table.
-5. **Tower.** Slide the servo into the tower from the front (output shaft towards the carousel, on
-   the centre line), fix with its two screws, lead the cable through the narrow slot to the left of the
-   servo nose into the tub. Fix the tower with 4 x M3 x 12 from inside the tub. The holes in the tub are slots:
-   leave the screws slightly loose for now.
-6. **Carousel on.** Lower it onto the bolt, add washer and self-locking nut. Tighten until the
-   plate has no wobble but still spins freely. Push the hub cap onto the nut.
-7. **Firmware**, then calibration (below). Press the drive dog onto the servo only after the servo
-   has moved to its park position.
-8. **Modules.** Lay the gate onto its roller (the tab drops into the groove near the tooth), push
-   both into the module together, and slide a piece of filament through the small hole under the
-   roller to keep them in. Set the module's three studs into the wide ends of the keyholes, slide
-   it towards the centre until the bump clicks into its hole. Fill, close.
+Step by step, with drawings of the base and the breadboard: [`docs/assembly.md`](docs/assembly.md).
+In short: bearings into the carousel; bolt, stepper and pinion into the base; servo into the tower
+and the tower onto the base; the light barriers into their cradles under the carousel and into the
+chute; breadboard, XIAO and driver board into their pockets; wiring; carousel on; firmware;
+calibration; modules.
 
-To remove a module: turn it away from the station (`POST /present`), lift the outer edge slightly
-and pull outwards.
+![layout of the base](docs/img/layout.svg)
 
 ## Firmware
 
@@ -196,22 +191,25 @@ Send request bodies as JSON with `Content-Type: application/json`.
 
 ### Calibration (once)
 
-Use the test page or `curl`. The examples assume
-`H=http://pilldispenser.local/api/v1` and `J='Content-Type: application/json'`.
+Details and what the error messages mean: [assembly guide, section 12](docs/assembly.md#12-first-start-and-calibration).
+The examples assume `H=http://pilldispenser.local/api/v1` and `J='Content-Type: application/json'`.
 
-1. **Sensors.** `curl $H/diag` must show `"beam_ok": true`. If not, the two halves in the chute do
-   not see each other or a plug is wrong. Turn the carousel by hand: `home_level` changes while the
-   flag is between the two halves under the hub, and only there.
-2. **Servo.** `curl -X POST $H/servo -H "$J" -d '{"position":"park"}'`, then press the drive dog onto the
+1. **Direction.** After power-up the carousel homes: it turns a little more than once while the
+   firmware reads the ten flags. It must turn clockwise seen from above (slot 2 arrives after slot 1).
+   If not: `curl -X PUT $H/settings -H "$J" -d '{"car_dir":-1}'`, then `curl -X POST $H/home`.
+2. **Sensors.** `curl $H/diag` must show `"beam_ok": true` (the light barrier in the chute works),
+   `"index_flags_deg"` with ten widths, slot 1's about twice the others (about 24-27 and 12-15),
+   and `"position_confirmed": true`.
+3. **Servo.** `curl -X POST $H/servo -H "$J" -d '{"position":"park"}'`, then press the drive dog onto the
    spline with the prongs horizontal and fix it with the servo's horn screw. Fine-tune with
    `servo_park_us`. `{"position":"end"}` should turn the dog about 150 degrees, the upper side of the roller moving
    to the left when you look at the tower from the front; adjust `servo_end_us` (if the servo runs
    the wrong way, swap the two values' roles: park near 2280, end near 610).
-3. **Direction.** `curl -X POST $H/goto -H "$J" -d '{"slot":2}'`. If slot 10 arrives instead of slot 2:
-   `curl -X PUT $H/settings -H "$J" -d '{"car_dir":-1}'`, then `POST $H/home`.
-4. **Slot 1.** `POST $H/home`, then nudge with `curl -X POST $H/jog -H "$J" -d '{"steps":40}'` (negative
-   values go back) until module 1 stands exactly in front of the tower with its roller centred on
-   the drive dog. `curl -X POST $H/calibrate/slot1` stores it.
+4. **Slot 1.** With a module on slot 1: `curl -X POST $H/goto -H "$J" -d '{"slot":1}'`, then nudge with
+   `curl -X POST $H/jog -H "$J" -d '{"steps":40}'` (negative values go back, 45 steps are about 1 degree)
+   until the module stands exactly in front of the tower with its roller centred on the drive dog.
+   `curl -X POST $H/calibrate/slot1` stores it. It is refused (409) unless slot 1's flag is in the
+   light barrier at that position.
 5. **Tower height.** With a module at the station, the prongs should sit 0.5-1 mm below the flat
    of the roller tooth and must not touch the module. Shift the tower in its slots, tighten.
 6. **Try it.** `curl -X POST $H/dispense -H "$J" -d '{"items":[{"slot":1,"count":1}]}'`
@@ -222,15 +220,15 @@ Full description: [`docs/openapi.yaml`](docs/openapi.yaml). The essentials:
 
 | Call | Does |
 |---|---|
-| `GET /api/v1/status` | state, slot at the station, error, Wi-Fi |
-| `GET /api/v1/slots`, `PUT /api/v1/slots/3` | names, stock (`count`), low-stock threshold |
+| `GET /api/v1/status` | state, slot at the station (and whether its flag confirmed it), error, Wi-Fi |
+| `GET /api/v1/slots`, `PUT /api/v1/slots/3` | names, stock (`count`), low-stock threshold, reserved for a profile |
 | `POST /api/v1/dispense` | `{"request_id":"...","items":[{"slot":1,"count":2}]}` - returns a job at once |
 | `GET /api/v1/jobs/17` | progress: per item `dispensed` and `missed` |
-| `GET /api/v1/events?since=42` | everything that happened: job_done, slot_empty, low_stock, double, ... |
-| `GET/POST/PUT/DELETE /api/v1/schedules` | dose times stored on the device, `auto` or `confirm` mode |
+| `GET /api/v1/events?since=42` | everything that happened: job_done, slot_empty, low_stock, double, resync, moved, ... |
+| `GET/POST/PUT/DELETE /api/v1/schedules` | dose times stored on the device, per profile, `auto` or `confirm` mode |
 | `POST /api/v1/present` | `{"slot":4}` turns a module to the refill position |
 | `POST /api/v1/stop`, `POST /api/v1/home` | stop everything; re-home |
-| `GET/PUT /api/v1/settings` | time zone, API key, webhook, motion tuning |
+| `GET/PUT /api/v1/settings` | time zone, API key, webhook, profile names, motion tuning |
 | `GET /api/v1/diag` | sensor self-test and raw levels, for setup |
 
 Connecting an app:
@@ -240,8 +238,15 @@ Connecting an app:
 - **Dose now:** `POST /dispense` with a unique `request_id`. Repeating the same id never dispenses
   twice, so the app can retry safely on a flaky connection.
 - **Dose plan on the device:** push `/schedules`; the dispenser keeps time by NTP and works without
-  the app. In `confirm` mode it only announces the dose (`dose_due`) and waits for the button or
-  `POST /schedules/{id}/run`.
+  the app. In `confirm` mode it only announces the dose (`dose_due`) and waits for the button of the
+  dose's profile or `POST /schedules/{id}/run`.
+- **Two people:** every schedule and job belongs to profile 1 or 2 (`profile_names` in `/settings`
+  gives them names), and a slot can be reserved for one of them (`PUT /slots/4` with `{"profile":2}`),
+  so one person's plan cannot take the other's pills. The right-hand button releases profile 1's due
+  doses, the left-hand one profile 2's. Events name the `profile` they concern. There is one cup, and
+  the dispenser knows whose pills went into it last but not whether they were taken. So an `auto`
+  dose only drops on its own if the last pills in the cup were for the same person; otherwise it
+  waits for that person's button like a `confirm` dose.
 - **What really happened:** poll `/events?since=<last seq>` or set `webhook_url`; the device then
   POSTs each relevant event as JSON to the app's backend. `dispensed` is what the light barrier
   counted, not what was requested.
@@ -260,7 +265,8 @@ roller. A second dispenser on the same network is the simpler way to go beyond 1
 Done in CAD (`cad/checks.py`, `cad/func.py`):
 
 - no part touches another while the carousel turns a full revolution, including modules, rollers,
-  gates and the home flag passing the tower, chute, light barriers and motor;
+  gates and the ten index flags passing the tower, chute, light barriers, motor, pinion and the
+  electronics on the floor;
 - no contact during the servo stroke; the drive dog takes the roller along after 4.8 degrees of
   play in both directions;
 - roller and gate cannot be pulled out past the keeper pin, the gate cannot leave without the
@@ -271,13 +277,34 @@ Done in CAD (`cad/checks.py`, `cad/func.py`):
 - a second pill waiting on top of the full pocket fits under the gate, and 2.5 mm higher it does
   not: the gate limits the layer to one pill;
 - for all five presets the pocket is closed towards the hopper before it opens to the outlet;
-- the home flag blocks its light barrier at the home position and nowhere else;
+- each of the ten index flags blocks the light barrier while its slot is at the station (from 8.5
+  degrees before to 7 after), slot 1's flag is the only wide one, and the light barrier is free
+  between the flags;
+- the breadboard with the XIAO, the ULN2003 board and the two optional buttons fit their places without
+  touching the tub, the stepper or the turning carousel; a USB-C plug grip of up to 15.4 x 11.3 mm
+  passes the opening in the back wall;
 - all 20 STL files are closed meshes.
 
-Done in a host simulation of the firmware (no ESP32 involved): homing with either output polarity
-of the light barrier and from different starting positions, slot positioning and shortest path,
-recovery after lost steps, job handling with an empty module, repeated request id, two pills in one
-stroke, unplugged receiver, unplugged emitter.
+Done in a host simulation of the firmware (`firmware/test_host`, no ESP32 involved), with a model of
+the carousel that includes gear backlash, slipping and stalling:
+
+- homing with either output polarity of the light barrier, from different starting positions and
+  with a flickering edge;
+- slot sequences with 70 and 250 steps of gear backlash; stalls before and after the flag edge and a
+  permanent jam; the carousel turned by hand while idle and during a job; stops in mid-move; jogging
+  and the slot 1 calibration, including a refused calibration at the wrong slot;
+- faults: 30 % slip, a missing flag, see-through flags, a light barrier stuck either way, a step count
+  that is off by a whole slot. Each is caught: the job fails with no stroke, or the carousel homes
+  again and the job completes;
+- job handling with an empty module, repeated request id, two pills in one stroke, unplugged receiver,
+  unplugged emitter;
+- two profiles: a reserved slot refused to the other profile, each button releasing only its own
+  profile's doses (one per press, oldest first), an `auto` dose waiting while the cup may hold the
+  other person's pills, a single button serving both, and a plan that uses a slot reserved for the
+  other profile since: refused, nothing dispensed.
+
+In all of it, no stroke was made at the wrong module, and every stroke of the simulated jobs happened
+within 0.25 degrees of the station. The one case the flags cannot measure is listed below.
 
 Not done, and where I expect tuning:
 
@@ -295,21 +322,29 @@ Not done, and where I expect tuning:
   switched off.
 - **Light barrier housings:** the mounts assume 20 x 10 x 8 mm with the lens in the middle of a
   small end face. Check one against the cradle before printing the base.
+- **Index flags and infrared:** the flags are 1.8 mm walls. In light or translucent filament they may
+  not block the beam; `GET /diag` shows the widths the firmware measured.
+- **Lost steps in the last few degrees of a move** (after the target's flag edge has passed) cannot be
+  measured. The right module is still at the station, and the next move corrects the position.
 - Translucent softgels may not break an infrared beam completely. Not tested.
 - Dimensions of MG90S clones vary by a few tenths; the tower height is adjustable for that reason.
 
 ## Safety
 
 This is a hobby device, not a medical product. It can miscount. For medication where a missed or
-doubled dose matters, check the cup. Keep it away from children, and keep light- or
+doubled dose matters, check the cup. When two people share it, take your pills out of the cup before
+the other person presses their button: the dispenser cannot see whether the cup is empty. Keep it
+away from children, and keep light- or
 moisture-sensitive medication in its original packaging.
 
 ## Repository layout
 
 ```
-cad/        dispenser.py (all parameters and parts), export.py, checks.py, func.py, make_roller.py (roller + gate)
+cad/        dispenser.py (all parameters and parts), export.py, checks.py, func.py, make_roller.py (roller + gate),
+            wiring_svg.py (draws docs/img/wiring.svg and layout.svg from the CAD positions)
 stl/        printable parts, in print orientation
 step/       the same as STEP, plus assembly.step
 firmware/   Arduino / PlatformIO project; test_host/run.sh = syntax check and motion simulation on a PC
-docs/       openapi.yaml, shopping-list.md, parts.json, images, preview/index.html (interactive 3D preview, needs internet)
+docs/       assembly.md (assembly and wiring guide), openapi.yaml, shopping-list.md, parts.json, images,
+            preview/index.html (interactive 3D preview, needs internet)
 ```

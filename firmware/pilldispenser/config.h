@@ -3,18 +3,24 @@
 #pragma once
 #include <Arduino.h>
 
-#define FW_VERSION "0.2.0"
+#define FW_VERSION "0.3.0"
 
 // ---------------------------------------------------------------- pins
 // Dx names are defined by the XIAO board variants, so this file works unchanged on
 // XIAO ESP32-C6 and XIAO ESP32-S3. (Do not use the XIAO ESP32-C3 with this map:
 // D8/D9 are boot strapping pins there and the ULN2003 inputs would pull them low.)
 #define PIN_BEAM    D0    // drop light barrier in the chute: signal wire of the receiver (internal pull-up)
-#define PIN_HOME    D1    // home light barrier under the carousel: signal wire of the receiver (internal pull-up)
-#define PIN_BUTTON  D2    // optional push button to GND ("dispense what is due")
+#define PIN_HOME    D1    // index light barrier under the carousel (one flag per slot): signal wire of the receiver (internal pull-up)
+#define PIN_BUTTON  D2    // optional push button of profile 1 to GND ("dispense what is due"), right-hand side wall
 #define PIN_SERVO   D3    // MG90S signal
-#define PIN_BEAM_LED D4   // supply wire of the drop barrier's emitter (about 10 mA): switched by the firmware to test the sensor
-#define PIN_BUZZER  D6    // optional active buzzer / LED, set to -1 if unused
+#define PIN_BUTTON2 D4    // optional push button of profile 2 to GND, left-hand side wall. -1 = only one button is
+                          // fitted: it then serves both profiles
+#define PIN_BUZZER  D5    // optional active buzzer for 3.3 V, up to 30 mA (pin set to full drive in motion.h), or an LED;
+                          // set to -1 if unused
+#define PIN_BEAM_LED D6   // supply wire of the drop barrier's emitter (about 10 mA): switched by the firmware to test the
+                          // sensor. D6 is the UART TX pin: the boot ROM sends its log there at every reset, which only
+                          // makes the emitter flicker before the firmware runs. (A buzzer there would chirp, and a
+                          // button pressed during a reset would short the pin.)
 #define PIN_IN1     D7    // ULN2003 IN1..IN4 -> 28BYJ-48 carousel stepper
 #define PIN_IN2     D8
 #define PIN_IN3     D9
@@ -26,13 +32,22 @@
 #define GEAR_RATIO         (60.0f / 15.0f)     // carousel gear / pinion
 #define STEPS_PER_REV      (MOTOR_HALFSTEPS * GEAR_RATIO)
 #define STEPS_PER_SLOT     (STEPS_PER_REV / N_SLOTS)
+#define STEPS_PER_DEG      (STEPS_PER_REV / 360.0f)
+
+// Index flags under the carousel hub, one per slot (same numbers as FLAG_LEAD / FLAG_W / FLAG_W_HOME in
+// cad/dispenser.py). Turning forward, a flag reaches the light barrier FLAG_LEAD_DEG before its slot stands at
+// the station and still covers it there. Slot 1's flag is twice as wide: that is the home mark.
+#define FLAG_LEAD_DEG      7.0f
+#define FLAG_DEG           12.0f
+#define HOME_FLAG_DEG      24.0f
 
 // ---------------------------------------------------------------- limits
 #define MAX_ITEMS          8      // lines per dispense request
 #define MAX_JOBS           12     // job history kept in RAM (queued + finished)
 #define MAX_SCHEDULES      16
 #define MAX_EVENTS         48
-#define MAX_DUE            4
+#define MAX_DUE            8      // doses waiting for a button, both profiles together
+#define N_PROFILES         2      // people sharing the dispenser, one button each
 
 #define ENABLE_OTA         1
 
@@ -43,7 +58,7 @@
 #define DEF_STEP_US_START   2600
 #define DEF_ACCEL_STEPS     250
 #define DEF_BACKLASH_STEPS  180       // ~4 deg at the carousel, final approach is always in + direction
-#define DEF_HOME_OFFSET     -317      // position (in steps) of the home edge relative to "slot 1 at the station" (flag = +-7 deg)
+#define DEF_HOME_OFFSET     -317      // position (in steps) of slot 1's flag edge relative to "slot 1 at the station" (-7 deg)
 #define DEF_SERVO_PARK_US   610       // roller pocket up, prongs horizontal
 #define DEF_SERVO_END_US    2280      // ~150 deg further (145 deg stroke + coupling play): pocket over the outlet
 #define DEF_SERVO_OVER_US   55        // overshoot when returning, takes up the coupling backlash (~5 deg)
@@ -53,4 +68,4 @@
 #define DEF_MAX_PER_ITEM    12        // upper bound for "count" in one request line
 #define DEF_REFILL_SLOTS    2         // POST /present parks the slot this many positions away from the station
 #define DEF_DUE_TIMEOUT_MIN 120
-#define DEF_REHOME_JOBS     8         // re-home if the home mark was not seen during this many jobs (0 = never)
+#define DEF_REHOME_JOBS     8         // home again if slot 1's wide flag was not recognised during this many jobs (0 = never)

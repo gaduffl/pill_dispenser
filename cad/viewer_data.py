@@ -23,7 +23,7 @@ def pack(shape, tol=0.3, ang=0.35):
 P = build_parts(); log("built")
 out = {"scale": SCALE, "dims": dict(zPlateTop=d.Z_PLATE_TOP, zAxis=d.Z_AXIS, za=d.ZA, xBody0=d.X_BODY0, hopperTop=d.HOPPER_TOP,
                                     slots=d.N_SLOTS, gearC=d.GEAR_C, motorM=d.MOTOR_M, chVTop=d.CH_VTOP, chX0=d.CH_X0 + 2, chX1=d.CH_X1,
-                                    chSlope=d.CH_SLOPE, cupX0=d.CUP_X0, floorT=d.FLOOR_T), "parts": {}}
+                                    chSlope=d.CH_SLOPE, cupX0=d.CUP_X0, floorT=d.FLOOR_T, stepperAng=d.STEPPER_ANG), "parts": {}}
 def add(name, shape, **kw):
     out["parts"][name] = pack(shape, **kw); log(name, out["parts"][name]["nt"])
 add("tub", P["base_tub"]); add("tower", P["tower"]); add("chute", P["chute"]); add("cup", P["cup"])
@@ -34,6 +34,9 @@ for k in d.PILLS: add("roller_" + k, d.roller(k), tol=0.25)
 for k in d.PILLS: add("gate_" + k, d.gate_in_module(k), tol=0.25)
 sd = list(d.sensor_dummies().values())
 add("sensors", sd[0].union(sd[1]).union(sd[2]).union(sd[3]))
+ed = d.electronics_dummies()
+add("electronics", ed["breadboard"].union(ed["xiao"]).union(ed["uln2003"]))
+add("usbplug", ed["usb_plug"])
 out["rollers"] = list(d.PILLS)
 out["pockets"] = {}
 for k, (shape, L, W, T) in d.PILLS.items():

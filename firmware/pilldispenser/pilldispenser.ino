@@ -24,6 +24,7 @@
 
 #include "state.h"
 #include "motion.h"
+#include "doses.h"
 #include "api.h"
 
 static bool apMode = false;
@@ -99,43 +100,24 @@ static void tickSchedules() {
     if (s.hh != tmv.tm_hour || s.mm != tmv.tm_min || s.last_ymd == ymd) continue;
     s.last_ymd = ymd;
     dirty = true;
-    char msg[72];
-    snprintf(msg, sizeof(msg), "schedule %u %s", s.id, s.label);
-    if (s.confirm) {
-      for (int i = 0; i < MAX_DUE; i++) if (!dueList[i]) { dueList[i] = s.id; dueSince[i] = now; break; }
-      addEvent("dose_due", msg);
-    } else {
-      uint32_t id = motion::enqueueJob(s.items, s.n, "schedule", "");
-      addEvent(id ? "dose_started" : "error", id ? msg : "schedule could not be queued", -1, id);
-    }
+    fireSchedule(s, now);
   }
-  for (int i = 0; i < MAX_DUE; i++) {
-    if (dueList[i] && now - dueSince[i] > (uint32_t)cfg.due_timeout_min * 60UL) {
-      char msg[40];
-      snprintf(msg, sizeof(msg), "schedule %u not confirmed", dueList[i]);
-      dueList[i] = 0;
-      addEvent("dose_missed", msg);
-    }
-  }
+  expireDue(now);
   if (dirty) saveSchedules();
 }
 
-// ------------------------------------------------------------------ button: dispense what is due
-static void tickButton() {
-  static bool was = false;
-  static uint32_t downAt = 0;
-  bool down = digitalRead(PIN_BUTTON) == LOW;
-  if (down && !was) downAt = millis();
-  if (!down && was && millis() - downAt > 40) {
-    Lock l;
-    bool ran = false;
-    for (int i = 0; i < MAX_DUE && !ran; i++) {
-      Schedule *s = dueList[i] ? findSchedule(dueList[i]) : nullptr;
-      if (s) { runSchedule(*s, "button"); ran = true; }
-    }
-    if (!ran) addEvent("button", "pressed, nothing due");
+// ------------------------------------------------------------------ buttons: dispense what is due, one per profile
+static void tickButtons() {
+  static const int pins[N_PROFILES] = {PIN_BUTTON, PIN_BUTTON2};
+  static bool was[N_PROFILES] = {};
+  static uint32_t downAt[N_PROFILES] = {};
+  for (int k = 0; k < N_PROFILES; k++) {
+    if (pins[k] < 0) continue;
+    bool down = digitalRead(pins[k]) == LOW;
+    if (down && !was[k]) downAt[k] = millis();
+    if (!down && was[k] && millis() - downAt[k] > 40) pressButton(PIN_BUTTON2 < 0 ? 0 : k + 1);   // one button: both
+    was[k] = down;
   }
-  was = down;
 }
 
 // ------------------------------------------------------------------ webhook: push events to the app backend
@@ -190,6 +172,7 @@ void setup() {
   if (!cfg.api_key[0]) copyStr(cfg.api_key, sizeof(cfg.api_key), API_KEY);
 #endif
   pinMode(PIN_BUTTON, INPUT_PULLUP);
+  if (PIN_BUTTON2 >= 0) pinMode(PIN_BUTTON2, INPUT_PULLUP);
   motion::begin();                               // servo to park, carousel homes itself
   wifiBegin();
   apiBegin();
@@ -203,7 +186,7 @@ void loop() {
 #endif
   tickWifi();
   tickSchedules();
-  tickButton();
+  tickButtons();
   tickWebhook();
   if (rebootPending && millis() > rebootAt) ESP.restart();
   delay(2);

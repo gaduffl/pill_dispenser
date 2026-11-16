@@ -92,7 +92,7 @@ pre { margin: 0; padding: 12px 14px; background: var(--surface); border: 1px sol
 <body>
 <main>
 <header>
-  <span class="status">Design rev 0.1 · checked in CAD · not yet printed</span>
+  <span class="status">Design rev 0.3 · checked in CAD · not yet printed</span>
   <h1>Carousel pill dispenser</h1>
   <p class="lede">Ten passive modules on a turntable, one drive unit in the base, a REST API over Wi-Fi. Add a module by printing it. The motors and electronics stay the same, and they plug together without soldering.</p>
 </header>
@@ -119,6 +119,7 @@ pre { margin: 0; padding: 12px 14px; background: var(--surface); border: 1px sol
       <span class="chip"><i style="background:#d9483b"></i>drive dog, pinion</span>
       <span class="chip"><i style="background:#e9c84a"></i>chute</span>
       <span class="chip"><i style="background:#26282c"></i>light barriers</span>
+      <span class="chip"><i style="background:#2a7a4b"></i>breadboard, XIAO, ULN2003</span>
     </div>
   </div>
 </section>
@@ -128,14 +129,14 @@ pre { margin: 0; padding: 12px 14px; background: var(--surface); border: 1px sol
   <div><dt>Storage</dt><dd>102 ml<small>per module</small></dd></div>
   <div><dt>Pill size</dt><dd>up to 30 × 12.5 mm<small>one roller and gate per pill type</small></dd></div>
   <div><dt>Drive</dt><dd>1 stepper + 1 servo<small>for all modules</small></dd></div>
-  <div><dt>Controller</dt><dd>XIAO ESP32-C6<small>5 V from USB-C, no soldering</small></dd></div>
+  <div><dt>Controller</dt><dd>XIAO ESP32-C6<small>5 V from USB-C at the back, no soldering</small></dd></div>
   <div><dt>Size</dt><dd>212 × 250 × 179 mm<small>largest print 212 mm</small></dd></div>
 </dl>
 
 <section>
   <h2>How one dose happens</h2>
   <ol class="steps">
-    <li><b>The carousel brings the module to the station.</b><span>A 28BYJ-48 stepper turns the plate through a 4:1 gear. A flag under the hub passes through a light barrier once per turn. That marks the home position, and the firmware re-checks it every time the flag passes.</span></li>
+    <li><b>The carousel brings the module to the station.</b><span>A 28BYJ-48 stepper turns the plate through a 4:1 gear. Ten flags under the hub, one per module, pass through a light barrier, so every arrival is confirmed by the module's own flag before the servo moves. Module 1's flag is twice as wide: that is the home mark.</span></li>
     <li><b>The roller meets the drive.</b><span>Each roller ends in a flat tooth. It slides over two prongs on the servo as the module arrives. Nothing latches, so modules stay free of motors, wires and screws.</span></li>
     <li><b>The servo turns the roller 145 degrees.</b><span>The pocket carries exactly one pill from the hopper round to the outlet. The housing covers the pocket on the way, so the hopper is never open to the outlet.</span></li>
     <li><b>The pill is counted on its way to the cup.</b><span>It slides down a V-shaped chute through a second light barrier. No pill seen: the firmware rocks the roller, retries, then reports the module as empty or jammed.</span></li>
@@ -193,21 +194,23 @@ pre { margin: 0; padding: 12px 14px; background: var(--surface); border: 1px sol
       <li><a href="https://opencircuit.shop/product/ir-break-beam-sensors-premium-wire-header-ends">2 IR break-beam sensor pairs, 3 mm LED type, wires with header ends</a> (Adafruit 2167)</li>
       <li><a href="https://www.berrybase.de/en/mini-breadboard-with-170-contacts">170-point breadboard</a></li>
       <li><a href="https://www.berrybase.de/bauelemente/prototyping/">Jumper wires, male-male and male-female</a></li>
+      <li><a href="https://www.berrybase.de/elektrolytkondensator-470-f-25v-1050c-1-radial-tht">470 µF electrolytic capacitor, 16 V or more</a></li>
       <li><a href="https://www.berrybase.de/offizielles-raspberry-pi-usb-c-netzteil-5-1v-3-0a-eu-schwarz">USB-C supply 5.1 V / 3 A with fixed cable</a></li>
+      <li>Optional: <a href="https://www.berrybase.de/en/kksb-12mm-druckknopf-momentanschalter-mit-2.54mm-dupont-anschluessen-150mm-kabel">12 mm push buttons</a> (one per person), <a href="https://www.berrybase.de/signalgeber-oe12-0mm-3-7v-dc-2-3khz-85db">active buzzer for 3.3 V</a></li>
     </ul></div>
     <div class="card"><h3>Hardware</h3><ul>
       <li>Hex bolt M8 × 80, washer, self-locking nut (hardware store)</li>
       <li><a href="https://www.ebay.de/itm/261993530414">2 ball bearings 608</a></li>
       <li>2 screws <a href="https://accu-components.com/de/metrische-zylinderkopfschrauben/3819-SSCF-M3-10-A2">M3 × 10</a>, 4 screws <a href="https://accu-components.com/de/metrische-zylinderkopfschrauben/3820-SSCF-M3-12-A2">M3 × 12</a></li>
       <li>1.75 mm filament, 60 mm per module, as roller keeper pin</li>
-      <li>Optional: push button, buzzer, rubber feet</li>
+      <li>Optional: stick-on rubber feet</li>
     </ul></div>
   </div>
 </section>
 
 <section>
   <h2>Wiring</h2>
-  <p>Nothing is soldered and there are no loose resistors or capacitors. The XIAO sits on the breadboard; four free rows serve as rails for 5 V, 3.3 V and GND.</p>
+  <p>Nothing is soldered. The breadboard sits at the back of the base, the XIAO at its outer end with the USB-C socket in the opening of the back wall. Free columns of the breadboard serve as rails for 5 V, 3.3 V and GND, and a 470 µF capacitor across 5 V and GND keeps the servo's start from resetting the board. Step-by-step guide: <code>docs/assembly.md</code>.</p>
   <div class="tablewrap"><table>
     <tr><th>XIAO pin</th><th>Goes to</th></tr>
     <tr><td class="n">5V</td><td>ULN2003 +, servo red</td></tr>
@@ -215,12 +218,12 @@ pre { margin: 0; padding: 12px 14px; background: var(--surface); border: 1px sol
     <tr><td class="n">3V3</td><td>red wire of both receivers, red wire of the home emitter</td></tr>
     <tr><td class="n">D0</td><td>signal wire of the receiver in the chute</td></tr>
     <tr><td class="n">D1</td><td>signal wire of the receiver under the carousel</td></tr>
-    <tr><td class="n">D4</td><td>red wire of the emitter in the chute</td></tr>
+    <tr><td class="n">D6</td><td>red wire of the emitter in the chute</td></tr>
     <tr><td class="n">D3</td><td>servo orange</td></tr>
     <tr><td class="n">D7 D8 D9 D10</td><td>ULN2003 IN1 IN2 IN3 IN4</td></tr>
-    <tr><td class="n">D2, D6</td><td>optional button to GND, optional buzzer</td></tr>
+    <tr><td class="n">D2, D4, D5</td><td>optional buttons to GND (D2 right: profile 1, D4 left: profile 2), optional buzzer</td></tr>
   </table></div>
-  <p class="note">The emitter in the chute runs from pin D4 so the firmware can switch it off and on before every stroke. If the receiver does not follow, a plug is loose or the chute is blocked, and no pill is released.</p>
+  <p class="note">The emitter in the chute runs from pin D6 so the firmware can switch it off and on before every stroke. If the receiver does not follow, a plug is loose or the chute is blocked, and no pill is released.</p>
 </section>
 
 <section>
@@ -302,11 +305,13 @@ PUT  /settings   {"webhook_url":"http://…"}   push events to a backend</pre>
   towerG.add(mesh('tower', 'base', 0x5e6a75), mesh('servo', 'servo', 0x2f55c8));
   var dogG = new THREE.Group(); dogG.position.set(0, 0, dim.zAxis);
   var dog = mesh('dog', 'red', 0xd9483b); dog.position.set(0, 0, -dim.zAxis); dogG.add(dog); towerG.add(dogG);
-  var pinion = mesh('pinion', 'red', 0xd9483b); pinion.position.set(-dim.gearC, 0, dim.motorM + 1.5);
+  var pinion = mesh('pinion', 'red', 0xd9483b), stA = dim.stepperAng * Math.PI / 180;
+  pinion.position.set(dim.gearC * Math.cos(stA), dim.gearC * Math.sin(stA), dim.motorM + 1.5); pinion.rotation.z = stA - Math.PI;
   var stepper = mesh('stepper', 'motor', 0x9aa13a), axle = mesh('axle', 'steel', 0x9da3a8);
   var hubcap = mesh('hubcap', 'base', 0x5e6a75); hubcap.position.set(0, 0, dim.zPlateTop + 10.6);
   var sensors = mesh('sensors', 'sensor', 0x26282c);
-  scene.add(tub, chute, cup, towerG, pinion, stepper, axle, hubcap, sensors);
+  var elec = mesh('electronics', 'pcb', 0x2a7a4b), usbplug = mesh('usbplug', 'sensor', 0x26282c);
+  scene.add(tub, chute, cup, towerG, pinion, stepper, axle, hubcap, sensors, elec, usbplug);
 
   // ---- carousel with modules
   var carG = new THREE.Group(); scene.add(carG);

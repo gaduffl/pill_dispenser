@@ -30,6 +30,7 @@ struct Settings {
   int32_t due_timeout_min = DEF_DUE_TIMEOUT_MIN;
   int32_t rehome_jobs = DEF_REHOME_JOBS;
   bool buzzer = true;
+  char profile_name[N_PROFILES][16] = {};  // names of the two profiles, e.g. "Anna", "Ben": kept here for the apps
 };
 
 struct Slot {
@@ -38,6 +39,7 @@ struct Slot {
   int32_t count = -1;                    // pills left, -1 = not tracked
   int32_t low = 10;                      // low-stock threshold
   bool enabled = true;
+  uint8_t profile = 0;                   // 0 = shared, 1 / 2 = reserved for the doses of that profile
 };
 
 struct Item { uint8_t slot; uint8_t count; uint8_t dispensed; uint8_t missed; };
@@ -53,6 +55,7 @@ struct Schedule {
   Item items[MAX_ITEMS];
   uint32_t last_ymd = 0;                 // yyyymmdd of the last run (prevents double runs)
   char label[24] = "";
+  uint8_t profile = 1;                   // whose dose: 1 or 2, released by that profile's button
 };
 
 enum JobState : uint8_t { JOB_FREE, JOB_QUEUED, JOB_RUNNING, JOB_DONE, JOB_PARTIAL, JOB_FAILED, JOB_CANCELLED };
@@ -63,6 +66,7 @@ struct Job {
   uint32_t id = 0;
   char request_id[40] = "";
   char source[12] = "";                  // api | schedule | button
+  uint8_t profile = 1;                   // whose pills
   uint8_t n = 0;
   Item items[MAX_ITEMS];
   char error[64] = "";
@@ -76,6 +80,7 @@ struct Event {
   char msg[72] = "";
   int16_t slot = -1;
   uint32_t job = 0;
+  uint8_t profile = 0;                   // 0 = not about one person
 };
 
 // ---------------------------------------------------------------- globals
@@ -89,6 +94,7 @@ static uint32_t jobSeq = 0;
 static uint16_t scheduleSeq = 0;
 static uint16_t dueList[MAX_DUE];        // schedules waiting for confirmation
 static uint32_t dueSince[MAX_DUE];
+static uint8_t cupProfile = 0;           // whose pills went into the cup last (0 = none yet), kept across restarts
 static SemaphoreHandle_t stateMtx;
 static Preferences prefs;
 
@@ -109,8 +115,11 @@ static void copyStr(char *dst, size_t n, const char *src) {
 }
 
 // ---------------------------------------------------------------- events
-static void addEvent(const char *type, const char *msg, int slot = -1, uint32_t job = 0) {
+// profile 0 with a job: the job's profile
+static void addEvent(const char *type, const char *msg, int slot = -1, uint32_t job = 0, uint8_t profile = 0) {
   Lock l;
+  if (!profile && job)
+    for (auto &j : jobs) if (j.state != JOB_FREE && j.id == job) { profile = j.profile; break; }
   Event &e = events[eventSeq % MAX_EVENTS];
   e.seq = ++eventSeq;
   e.t = nowUnix();
@@ -118,6 +127,7 @@ static void addEvent(const char *type, const char *msg, int slot = -1, uint32_t 
   copyStr(e.msg, sizeof(e.msg), msg);
   e.slot = slot;
   e.job = job;
+  e.profile = profile;
   Serial.printf("[event %lu] %s: %s (slot %d, job %lu)\n", (unsigned long)e.seq, type, msg, slot, (unsigned long)job);
 }
 
@@ -128,7 +138,33 @@ static void eventToJson(const Event &e, JsonObject o) {
   o["message"] = e.msg;
   if (e.slot >= 0) o["slot"] = e.slot;
   if (e.job) o["job_id"] = e.job;
+  if (e.profile) o["profile"] = e.profile;
 }
+
+// ---------------------------------------------------------------- profiles
+// Two people can share the dispenser. Every schedule and job belongs to profile 1 or 2, a slot can be reserved for
+// one of them (slot.profile, 0 = shared), and each profile has its own button.
+
+// Checks that profile p (1 or 2) may use every slot of a dose. With p == 0 the profile comes from the slots: the
+// owner of the reserved ones, 1 if all are shared. Returns "" or an error text; p is 1 or 2 afterwards.
+static String itemsProfile(const Item *it, uint8_t n, uint8_t &p) {
+  static char err[56];
+  for (uint8_t i = 0; i < n; i++) {
+    uint8_t owner = slots[it[i].slot].profile;
+    if (!owner) continue;
+    if (!p) p = owner;
+    if (owner != p) {
+      snprintf(err, sizeof(err), "slot %u is reserved for profile %u", (unsigned)(it[i].slot + 1), (unsigned)owner);
+      return String(err);
+    }
+  }
+  if (!p) p = 1;
+  return String("");
+}
+
+// One cup for both: the firmware knows whose pills went into it last, not whether they were taken. A dose that is
+// dispensed without anyone pressing a button must not land on the other person's pills.
+static bool cupMayHoldOther(uint8_t p) { return cupProfile != 0 && cupProfile != p; }
 
 // ---------------------------------------------------------------- JSON <-> structs
 static void settingsToJson(JsonObject o, bool withSecrets) {
@@ -156,6 +192,8 @@ static void settingsToJson(JsonObject o, bool withSecrets) {
   o["due_timeout_min"] = cfg.due_timeout_min;
   o["rehome_jobs"] = cfg.rehome_jobs;
   o["buzzer"] = cfg.buzzer;
+  JsonArray pn = o["profile_names"].to<JsonArray>();
+  for (int i = 0; i < N_PROFILES; i++) pn.add(cfg.profile_name[i]);
 }
 
 template <typename T> static void rd(JsonVariantConst v, T &dst, long lo, long hi) {
@@ -193,6 +231,11 @@ static void settingsFromJson(JsonObjectConst o) {
   rd(o["due_timeout_min"], cfg.due_timeout_min, 1, 1440);
   rd(o["rehome_jobs"], cfg.rehome_jobs, 0, 1000);
   rdBool(o["buzzer"], cfg.buzzer);
+  if (o["profile_names"].is<JsonArrayConst>()) {      // ["Anna", "Ben"]; null leaves a name as it is
+    int i = 0;
+    for (JsonVariantConst v : o["profile_names"].as<JsonArrayConst>())
+      if (i < N_PROFILES) rdStr(v, cfg.profile_name[i++], sizeof(cfg.profile_name[0]));
+  }
 }
 
 static void slotToJson(int i, JsonObject o) {
@@ -204,6 +247,7 @@ static void slotToJson(int i, JsonObject o) {
   o["low"] = s.low;
   o["enabled"] = s.enabled;
   o["low_stock"] = s.count >= 0 && s.count <= s.low;
+  o["profile"] = s.profile;
 }
 
 static void slotFromJson(int i, JsonObjectConst o) {
@@ -213,6 +257,7 @@ static void slotFromJson(int i, JsonObjectConst o) {
   rd(o["count"], s.count, -1, 100000);
   rd(o["low"], s.low, 0, 100000);
   rdBool(o["enabled"], s.enabled);
+  rd(o["profile"], s.profile, 0, N_PROFILES);
 }
 
 static void itemsToJson(const Item *it, uint8_t n, JsonArray a, bool progress) {
@@ -249,6 +294,7 @@ static void scheduleToJson(const Schedule &s, JsonObject o) {
   for (int i = 0; i < 7; i++) if (s.days & (1 << i)) d.add(i + 1);        // 1 = Monday ... 7 = Sunday
   o["enabled"] = s.enabled;
   o["mode"] = s.confirm ? "confirm" : "auto";
+  o["profile"] = s.profile;
   o["label"] = s.label;
   itemsToJson(s.items, s.n, o["items"].to<JsonArray>(), false);
   o["last_run"] = s.last_ymd;
@@ -267,6 +313,7 @@ static String scheduleFromJson(JsonObjectConst o, Schedule &s, bool partial) {
   }
   rdBool(o["enabled"], s.enabled);
   if (o["mode"].is<const char *>()) s.confirm = strcmp(o["mode"].as<const char *>(), "confirm") == 0;
+  rd(o["profile"], s.profile, 1, N_PROFILES);
   rdStr(o["label"], s.label, sizeof(s.label));
   if (o["items"].is<JsonArrayConst>()) {
     String e = itemsFromJson(o["items"].as<JsonArrayConst>(), s.items, s.n);
@@ -279,6 +326,7 @@ static void jobToJson(const Job &j, JsonObject o) {
   o["id"] = j.id;
   o["state"] = JOB_STATE_NAME[j.state];
   o["source"] = j.source;
+  o["profile"] = j.profile;
   if (j.request_id[0]) o["request_id"] = j.request_id;
   itemsToJson(j.items, j.n, o["items"].to<JsonArray>(), true);
   if (j.error[0]) o["error"] = j.error;
@@ -311,6 +359,7 @@ static void saveConfig() {
   settingsToJson(doc["settings"].to<JsonObject>(), true);
   JsonArray a = doc["slots"].to<JsonArray>();
   for (int i = 0; i < N_SLOTS; i++) slotToJson(i, a.add<JsonObject>());
+  doc["cup_profile"] = cupProfile;
   saveBlob("cfg", doc);
 }
 
@@ -330,6 +379,8 @@ static void loadAll() {
     settingsFromJson(doc["settings"].as<JsonObjectConst>());
     int i = 0;
     for (JsonObjectConst o : doc["slots"].as<JsonArrayConst>()) if (i < N_SLOTS) slotFromJson(i++, o);
+    long cp = doc["cup_profile"] | 0L;
+    cupProfile = cp >= 1 && cp <= N_PROFILES ? (uint8_t)cp : 0;
   }
   JsonDocument d2;
   if (loadBlob("sched", d2)) {
