@@ -33,24 +33,25 @@ XIAO_R = ["5V", "GND", "3V3", "D10", "D9", "D8", "D7"]       # row g, columns 1.
 
 # jumpers on the breadboard: (from, to, colour, dashed)
 LINKS = [("1i", "9f", C5V, False), ("2i", "10g", CGND, False), ("3i", "11f", C3V3, False), ("10e", "10f", CGND, False),
-         ("12b", "1a", CSIG, False), ("13b", "5a", CSIG, False), ("10j", "14f", CGND, True)]
+         ("12b", "1a", CSIG, False), ("13b", "7a", CSIG, False), ("10j", "14f", CGND, True)]
 # wires that leave the breadboard: (hole, side, colour, dashed)
-OUT = [("2a", "L", CSIG, False), ("3a", "L", COPT, True), ("4a", "L", CSRV, False), ("6a", "L", COPT, True),
+OUT = [("2a", "L", CSIG, False), ("3a", "L", COPT, True), ("4a", "L", CSRV, False), ("5a", "L", COPT, True), ("6a", "L", COPT, True),
        ("10a", "L", CGND, False), ("10b", "L", CGND, False), ("10c", "L", CGND, False), ("10d", "L", CGND, False),
        ("12a", "L", CSIG, False), ("13a", "L", CSIG, False),
        ("4j", "R", CULN, False), ("5j", "R", CULN, False), ("6j", "R", CULN, False), ("7j", "R", CULN, False),
        ("9g", "R", C5V, False), ("9h", "R", C5V, False), ("10h", "R", CGND, False), ("10i", "R", CGND, False),
        ("11g", "R", C3V3, False), ("11h", "R", C3V3, False), ("11i", "R", C3V3, False),
-       ("14g", "R", COPT, True), ("14h", "R", COPT, True)]
+       ("14g", "R", COPT, True), ("14h", "R", COPT, True), ("14i", "R", COPT, True)]
 # labels at the edge: (column, side, text, colour)
-LABELS = [(2, "L", "D1  <- home receiver, white", CSIG), (3, "L", "D2  <- push button (optional)", COPT),
-          (4, "L", "D3  <- servo, orange", CSRV), (6, "L", "D5  <- buzzer + (optional)", COPT),
+LABELS = [(2, "L", "D1  <- home receiver, white", CSIG), (3, "L", "D2  <- button 1, profile 1 (optional)", COPT),
+          (4, "L", "D3  <- servo, orange", CSRV), (5, "L", "D4  <- button 2, profile 2 (optional)", COPT),
+          (6, "L", "D5  <- buzzer + (optional)", COPT), (7, "L", "D6  -> drop emitter (link from 13)", CSIG),
           (9.6, "L", "GND <- black wires of both", CGND), (10.4, "L", "light barriers (4 wires)", CGND),
-          (12, "L", "drop receiver, white (-> D0)", CSIG), (13, "L", "drop emitter, red (-> D4)", CSIG),
+          (12, "L", "drop receiver, white (-> D0)", CSIG), (13, "L", "drop emitter, red (-> D6)", CSIG),
           (4, "R", "D10 -> ULN2003 IN4", CULN), (5, "R", "D9  -> ULN2003 IN3", CULN), (6, "R", "D8  -> ULN2003 IN2", CULN),
           (7, "R", "D7  -> ULN2003 IN1", CULN), (8.75, "R", "5V  -> ULN2003 +,  servo red", C5V),
           (9.85, "R", "GND -> ULN2003 -,  servo brown", CGND), (10.95, "R", "3V3 -> red wires: home receiver,", C3V3),
-          (11.55, "R", "home emitter, drop receiver", C3V3), (14.4, "R", "GND -> button, buzzer - (optional)", COPT)]
+          (11.55, "R", "home emitter, drop receiver", C3V3), (14.4, "R", "GND -> buttons, buzzer - (optional)", COPT)]
 
 
 def wire_path(a, b, bulge):
@@ -118,7 +119,7 @@ def breadboard_svg():
         o.append('<circle cx="%.1f" cy="%.1f" r="3.4" fill="%s"/>' % (x, y, colr))
     # jumpers on the board
     for a, b, colr, dash in LINKS:
-        bulge = "L" if b in ("1a", "5a") else None
+        bulge = "L" if b in ("1a", "7a") else None
         dd = ' stroke-dasharray="6 4"' if dash else ""
         o.append('<path d="%s" fill="none" stroke="%s" stroke-width="3.2" stroke-linecap="round" stroke-opacity="0.9"%s/>' % (
             wire_path(a, b, bulge), colr, dd))
@@ -236,10 +237,12 @@ def layout_svg():
     o.append(poly(rect_rot(d.TUB_R - 3, d.TUB_R + 18, -6.2, 6.2, d.BB_ANG), "#26282c", "#000"))
     x, y = pt(-90, 0); o.append(text(x, y + 4, "XIAO", 11, "middle", "bold", "#ffffff"))
     x, y = pt(-118, 0); o.append(text(x + 18, y + 4, "USB-C cable through the back wall", 12, "start", "bold"))
-    # button hole, servo cable notch
+    # button holes (1 right, 2 left), servo cable notch
     bx, by = rot(d.TUB_R, 0, d.BTN_ANG)
-    x, y = pt(bx, by)
-    o.append('<circle cx="%.1f" cy="%.1f" r="7" fill="#ffffff" stroke="#7f7f7f" stroke-width="2" stroke-dasharray="3 2"/>' % (x, y))
+    b2x, b2y = rot(d.TUB_R, 0, d.BTN2_ANG)
+    for hx, hy in ((bx, by), (b2x, b2y)):
+        x, y = pt(hx, hy)
+        o.append('<circle cx="%.1f" cy="%.1f" r="7" fill="#ffffff" stroke="#7f7f7f" stroke-width="2" stroke-dasharray="3 2"/>' % (x, y))
     x, y = pt(d.FLAT_X - 1, 29)
     o.append('<rect x="%.1f" y="%.1f" width="7" height="7" fill="%s"/>' % (x - 3.5, y - 3.5, CSRV))
     # cable routes, all flat on the floor
@@ -256,23 +259,25 @@ def layout_svg():
     o.append(route([(77, -34), (45, -36), (5, -30), (-25, -24), (-62, -18)], CSIG))                            # drop barrier
     o.append(route([(25, -1), (20, -14), (0, -18), (-35, -20), (-75, -18)], CHOME))                            # index receiver
     o.append(route([(5, -57), (-20, -40), (-50, -22), (-72, -18)], CHOME))                                     # index emitter
-    o.append(route([(bx - 3, by - 2), (30, 70), (0, 40), (-40, 22), (-70, 15)], COPT, 3, True))                 # button
+    o.append(route([(bx - 3, by - 2), (30, 70), (0, 40), (-40, 22), (-70, 15)], COPT, 3, True))                 # button 1
+    o.append(route([(b2x - 3, b2y + 2), (15, -90), (-30, -86), (-62, -62), (-80, -20)], COPT, 3, True))         # button 2
     # labels
     callout("L", 150, "breadboard + XIAO ESP32-C6", (-d.BB_R1 + 12, -17.5))
     a_e = a1 + 7.25
     callout("L", 300, "index light barrier", rot(a_e + 6, d.HOME_B, d.HOME_ROT))
     callout("L", 316, "emitter outside the flag ring,", None, 11, "normal", "#555")
     callout("L", 330, "receiver inside it", None, 11, "normal", "#555")
+    callout("L", 404, "hole for push button 2 (optional)", (b2x - 3, b2y), 11, "normal", "#555")
     callout("L", 470, "drop light barrier in the chute", (77.5, -32.2))
     callout("R", 200, "stepper 28BYJ-48 under its pinion", (sx, sy + 12))
     callout("R", 320, "ULN2003 driver board", rot(d.ULN_R + 10, 0, d.ULN_ANG))
-    callout("R", 396, "hole for the optional push button", (bx - 3, by), 11, "normal", "#555")
+    callout("R", 396, "hole for push button 1 (optional)", (bx - 3, by), 11, "normal", "#555")
     callout("R", 450, "servo cable + 3 jumpers", (77, 35.5), 12, "bold", CSRV)
     callout("R", 520, "servo cable comes in through this slot", (d.FLAT_X - 1, 29), 11, "normal", CSRV)
     # legend and notes
     ly = H - 74
     items = [(CSRV, "servo"), (CULN, "ULN2003 to breadboard"), (CSTEP, "stepper to ULN2003"),
-             (CSIG, "drop light barrier"), (CHOME, "index light barrier"), (COPT, "push button (optional)")]
+             (CSIG, "drop light barrier"), (CHOME, "index light barrier"), (COPT, "push buttons (optional)")]
     x = 30
     for colr, s in items:
         dd = ' stroke-dasharray="8 5"' if colr == COPT else ""

@@ -74,7 +74,7 @@ for a in (0, 22, 45, 90, 141, 165, 175):
 
 print("\n6) electronics on the floor of the base")
 tub = static["tub"]
-for n in ("breadboard", "xiao", "usb_plug", "uln2003", "button"):
+for n in ("breadboard", "xiao", "usb_plug", "uln2003", "button", "button2"):
     print("   %-10s x tub %.3f   x stepper %.3f   x pinion %.3f" % (n, vol(static[n], tub), vol(static[n], static["stepper"]), vol(static[n], pin)))
 corner = math.hypot(d.BB_R1, d.BB_W / 2)
 print("   breadboard pocket corner to the inside of the wall: %.2f mm" % (d.TUB_R - d.TUB_WALL - corner))

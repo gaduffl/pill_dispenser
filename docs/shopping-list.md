@@ -27,16 +27,18 @@ jumpers from the set plug straight into the servo's plug and bridge the rest. Ju
 9 male-male (6 of them as short links on the breadboard, where pre-cut breadboard jumpers are
 neater, and 3 for the servo) and 6 female-male, so one set is plenty.
 
-Optional, for the hole in the side wall and for reminders:
+Optional, for the holes in the side walls and for the beeps:
 
 | Qty | Part | Where | Price seen |
 |---|---|---|---|
-| 1 | Push button, 12 mm panel mount, momentary, 15 cm leads with 2.54 mm Dupont plugs ("KKSB 12mm Druckknopf Momentanschalter") | [BerryBase](https://www.berrybase.de/en/kksb-12mm-druckknopf-momentanschalter-mit-2.54mm-dupont-anschluessen-150mm-kabel) | 4.90 EUR |
+| 1 or 2 | Push button, 12 mm panel mount, momentary, 15 cm leads with 2.54 mm Dupont plugs ("KKSB 12mm Druckknopf Momentanschalter") | [BerryBase](https://www.berrybase.de/en/kksb-12mm-druckknopf-momentanschalter-mit-2.54mm-dupont-anschluessen-150mm-kabel) | 4.90 EUR each |
 | 1 | Active buzzer (it has its own oscillator), 12 mm, 3-7 V DC, 2.3 kHz, 85 dB, type SG37D2K3 | [BerryBase](https://www.berrybase.de/signalgeber-oe12-0mm-3-7v-dc-2-3khz-85db) | 0.75 EUR |
 
-Any 12 mm push button that closes when pressed works. Its leads have to reach the breadboard at the
-back: the KKSB ones are 15 cm, so extend each with a jumper from the set (male-male if the leads end
-in sockets, female-male if they end in pins).
+Any 12 mm push button that closes when pressed works. One person needs one; two people sharing the
+dispenser get one each, and each button releases the doses of its own profile (right: profile 1,
+left: profile 2). The leads have to reach the breadboard at the back: the KKSB ones are 15 cm, so
+extend each with a jumper from the set (male-male if the leads end in sockets, female-male if they
+end in pins).
 
 The buzzer hangs straight on a pin of the XIAO, + to D5. The firmware sets that pin to its strongest
 drive, which Espressif rates at 40 mA (the default is 20 mA), so any active buzzer for 3.3 V that

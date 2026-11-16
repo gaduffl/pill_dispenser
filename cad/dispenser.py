@@ -137,6 +137,7 @@ USB_HW = 8.0
 ULN_ANG, ULN_R = 72.0, 79.0        # ULN2003 driver board (boards vary: 25 x 18 up to 35 x 32 mm)
 ULN_L, ULN_W = 38.0, 35.0          # pocket, long side tangential
 BTN_ANG, BTN_Z, BTN_D = 60.0, 45.0, 12.2   # optional 12 mm panel push button, right-hand side wall, above the ULN2003
+BTN2_ANG = -60.0                   # second button (profile 2): the mirror image, in the left-hand side wall
 
 # chute
 CH_X0, CH_X1 = 56.2, 84.2
@@ -673,8 +674,9 @@ def tub():
     t = t.union(rot_z(seat_rim(BB_R0, BB_R1, BB_W / 2), BB_ANG))
     # ULN2003 driver board: pocket next to the stepper (long side tangential)
     t = t.union(rot_z(seat_rim(ULN_R - ULN_W / 2, ULN_R + ULN_W / 2, ULN_L / 2), ULN_ANG))
-    # hole for the optional push button ("dispense what is due")
-    t = t.cut(rot_z(cyl_x(0, BTN_Z, BTN_D / 2, TUB_R - 8, TUB_R + 2), BTN_ANG))
+    # holes for the optional push buttons ("dispense what is due"), one per profile
+    for a in (BTN_ANG, BTN2_ANG):
+        t = t.cut(rot_z(cyl_x(0, BTN_Z, BTN_D / 2, TUB_R - 8, TUB_R + 2), a))
     # cable tie slots in the floor are left to the builder: adhesive pads work fine
     return t
 
@@ -820,7 +822,7 @@ def electronics_dummies():
     btn = cyl_x(0, BTN_Z, 5.9, rin - 22.0, TUB_R + 2.0)                                # 12 mm thread and body
     btn = btn.union(cyl_x(0, BTN_Z, 8.0, rin - 3.0, rin)).union(cyl_x(0, BTN_Z, 8.0, TUB_R + 0.2, TUB_R + 4.0))
     return {"breadboard": rot_z(bb, BB_ANG), "xiao": rot_z(xiao, BB_ANG), "usb_plug": rot_z(plug, BB_ANG),
-            "uln2003": rot_z(uln, ULN_ANG), "button": rot_z(btn, BTN_ANG)}
+            "uln2003": rot_z(uln, ULN_ANG), "button": rot_z(btn, BTN_ANG), "button2": rot_z(btn, BTN2_ANG)}
 
 
 def servo_dummy():

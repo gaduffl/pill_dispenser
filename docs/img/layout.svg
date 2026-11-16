@@ -27,6 +27,7 @@
 <text x="430.0" y="124.0" font-size="11" text-anchor="middle" font-weight="bold" fill="#ffffff" font-family="Helvetica, Arial, sans-serif" >XIAO</text>
 <text x="448.0" y="68.0" font-size="12" text-anchor="start" font-weight="bold" fill="#222" font-family="Helvetica, Arial, sans-serif" >USB-C cable through the back wall</text>
 <circle cx="610.1" cy="404.0" r="7" fill="#ffffff" stroke="#7f7f7f" stroke-width="2" stroke-dasharray="3 2"/>
+<circle cx="249.9" cy="404.0" r="7" fill="#ffffff" stroke="#7f7f7f" stroke-width="2" stroke-dasharray="3 2"/>
 <rect x="484.5" y="486.5" width="7" height="7" fill="#8e44ad"/>
 <polyline points="488.0,488.0 514.0,420.0 522.0,340.0 490.0,290.0 478.0,220.0 466.0,176.0" fill="none" stroke="#8e44ad" stroke-width="5" stroke-opacity="0.6" stroke-linejoin="round" stroke-linecap="round"/>
 <polyline points="562.0,380.0 546.0,320.0 486.0,270.0 470.0,210.0 462.0,160.0" fill="none" stroke="#2ca02c" stroke-width="5" stroke-opacity="0.6" stroke-linejoin="round" stroke-linecap="round"/>
@@ -35,6 +36,7 @@
 <polyline points="428.0,350.0 402.0,340.0 394.0,300.0 390.0,230.0 394.0,150.0" fill="none" stroke="#17a2b8" stroke-width="5" stroke-opacity="0.6" stroke-linejoin="round" stroke-linecap="round"/>
 <polyline points="316.0,310.0 350.0,260.0 386.0,200.0 394.0,156.0" fill="none" stroke="#17a2b8" stroke-width="5" stroke-opacity="0.6" stroke-linejoin="round" stroke-linecap="round"/>
 <polyline points="606.1,398.0 570.0,360.0 510.0,300.0 474.0,220.0 460.0,160.0" fill="none" stroke="#7f7f7f" stroke-width="3" stroke-opacity="0.6" stroke-linejoin="round" stroke-linecap="round" stroke-dasharray="8 5"/>
+<polyline points="253.9,398.0 250.0,330.0 258.0,240.0 306.0,176.0 390.0,140.0" fill="none" stroke="#7f7f7f" stroke-width="3" stroke-opacity="0.6" stroke-linejoin="round" stroke-linecap="round" stroke-dasharray="8 5"/>
 <path d="M212.0 146.0 L395.0 124.3" stroke="#8a929a" stroke-width="1"/>
 <text x="208.0" y="150.0" font-size="12" text-anchor="end" font-weight="bold" fill="#222" font-family="Helvetica, Arial, sans-serif" >breadboard + XIAO ESP32-C6</text>
 <circle cx="395.0" cy="124.3" r="2.5" fill="#8a929a"/>
@@ -43,6 +45,9 @@
 <circle cx="343.4" cy="319.6" r="2.5" fill="#8a929a"/>
 <text x="208.0" y="316.0" font-size="11" text-anchor="end" font-weight="normal" fill="#555" font-family="Helvetica, Arial, sans-serif" >emitter outside the flag ring,</text>
 <text x="208.0" y="330.0" font-size="11" text-anchor="end" font-weight="normal" fill="#555" font-family="Helvetica, Arial, sans-serif" >receiver inside it</text>
+<path d="M212.0 400.0 L249.9 398.0" stroke="#8a929a" stroke-width="1"/>
+<text x="208.0" y="404.0" font-size="11" text-anchor="end" font-weight="normal" fill="#555" font-family="Helvetica, Arial, sans-serif" >hole for push button 2 (optional)</text>
+<circle cx="249.9" cy="398.0" r="2.5" fill="#8a929a"/>
 <path d="M212.0 466.0 L365.6 455.0" stroke="#8a929a" stroke-width="1"/>
 <text x="208.0" y="470.0" font-size="12" text-anchor="end" font-weight="bold" fill="#222" font-family="Helvetica, Arial, sans-serif" >drop light barrier in the chute</text>
 <circle cx="365.6" cy="455.0" r="2.5" fill="#8a929a"/>
@@ -53,7 +58,7 @@
 <text x="652.0" y="320.0" font-size="12" text-anchor="start" font-weight="bold" fill="#222" font-family="Helvetica, Arial, sans-serif" >ULN2003 driver board</text>
 <circle cx="599.3" cy="355.0" r="2.5" fill="#8a929a"/>
 <path d="M648.0 392.0 L610.1 398.0" stroke="#8a929a" stroke-width="1"/>
-<text x="652.0" y="396.0" font-size="11" text-anchor="start" font-weight="normal" fill="#555" font-family="Helvetica, Arial, sans-serif" >hole for the optional push button</text>
+<text x="652.0" y="396.0" font-size="11" text-anchor="start" font-weight="normal" fill="#555" font-family="Helvetica, Arial, sans-serif" >hole for push button 1 (optional)</text>
 <circle cx="610.1" cy="398.0" r="2.5" fill="#8a929a"/>
 <path d="M648.0 446.0 L501.0 454.0" stroke="#8a929a" stroke-width="1"/>
 <text x="652.0" y="450.0" font-size="12" text-anchor="start" font-weight="bold" fill="#8e44ad" font-family="Helvetica, Arial, sans-serif" >servo cable + 3 jumpers</text>
@@ -72,7 +77,7 @@
 <path d="M582.4 646.0 L604.4 646.0" stroke="#17a2b8" stroke-width="5" stroke-opacity="0.6" stroke-linecap="round"/>
 <text x="610.4" y="650.0" font-size="11" text-anchor="start" font-weight="normal" fill="#222" font-family="Helvetica, Arial, sans-serif" >index light barrier</text>
 <path d="M742.2 646.0 L764.2 646.0" stroke="#7f7f7f" stroke-width="5" stroke-opacity="0.6" stroke-linecap="round" stroke-dasharray="8 5"/>
-<text x="770.2" y="650.0" font-size="11" text-anchor="start" font-weight="normal" fill="#222" font-family="Helvetica, Arial, sans-serif" >push button (optional)</text>
+<text x="770.2" y="650.0" font-size="11" text-anchor="start" font-weight="normal" fill="#222" font-family="Helvetica, Arial, sans-serif" >push buttons (optional)</text>
 <text x="30.0" y="674.0" font-size="11" text-anchor="start" font-weight="normal" fill="#555" font-family="Helvetica, Arial, sans-serif" >All wires lie flat on the floor. The index flags under the carousel come down to 36 mm above the floor, the stepper body to 27 mm:</text>
 <text x="30.0" y="690.0" font-size="11" text-anchor="start" font-weight="normal" fill="#555" font-family="Helvetica, Arial, sans-serif" >wires may pass under the stepper, but no loop of wire may stand up inside the base. Left and right as seen standing in front of the dispenser.</text>
 <text x="930.0" y="70.0" font-size="13" text-anchor="end" font-weight="bold" fill="#5e6a75" font-family="Helvetica, Arial, sans-serif" >BACK</text>

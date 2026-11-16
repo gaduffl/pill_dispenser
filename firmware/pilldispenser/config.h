@@ -11,12 +11,16 @@
 // D8/D9 are boot strapping pins there and the ULN2003 inputs would pull them low.)
 #define PIN_BEAM    D0    // drop light barrier in the chute: signal wire of the receiver (internal pull-up)
 #define PIN_HOME    D1    // index light barrier under the carousel (one flag per slot): signal wire of the receiver (internal pull-up)
-#define PIN_BUTTON  D2    // optional push button to GND ("dispense what is due")
+#define PIN_BUTTON  D2    // optional push button of profile 1 to GND ("dispense what is due"), right-hand side wall
 #define PIN_SERVO   D3    // MG90S signal
-#define PIN_BEAM_LED D4   // supply wire of the drop barrier's emitter (about 10 mA): switched by the firmware to test the sensor
+#define PIN_BUTTON2 D4    // optional push button of profile 2 to GND, left-hand side wall. -1 = only one button is
+                          // fitted: it then serves both profiles
 #define PIN_BUZZER  D5    // optional active buzzer for 3.3 V, up to 30 mA (pin set to full drive in motion.h), or an LED;
-                          // set to -1 if unused. Not D6: that is the UART TX pin, the
-                          // boot ROM sends its log there at every reset and a buzzer on it would chirp
+                          // set to -1 if unused
+#define PIN_BEAM_LED D6   // supply wire of the drop barrier's emitter (about 10 mA): switched by the firmware to test the
+                          // sensor. D6 is the UART TX pin: the boot ROM sends its log there at every reset, which only
+                          // makes the emitter flicker before the firmware runs. (A buzzer there would chirp, and a
+                          // button pressed during a reset would short the pin.)
 #define PIN_IN1     D7    // ULN2003 IN1..IN4 -> 28BYJ-48 carousel stepper
 #define PIN_IN2     D8
 #define PIN_IN3     D9
@@ -42,7 +46,8 @@
 #define MAX_JOBS           12     // job history kept in RAM (queued + finished)
 #define MAX_SCHEDULES      16
 #define MAX_EVENTS         48
-#define MAX_DUE            4
+#define MAX_DUE            8      // doses waiting for a button, both profiles together
+#define N_PROFILES         2      // people sharing the dispenser, one button each
 
 #define ENABLE_OTA         1
 

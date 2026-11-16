@@ -13,6 +13,9 @@ info:
     3. Keep stock in step with `/slots` (the device decrements `count` for every pill its drop sensor sees).
 
     Slots are numbered 1..10 as engraved on the carousel.
+
+    Two people can share the dispenser: schedules, jobs and events carry a profile (1 or 2), a slot can be reserved
+    for one profile, and each profile has its own button (profile 1 right, profile 2 left).
 servers:
   - url: http://pilldispenser.local/api/v1
 security:
@@ -41,6 +44,7 @@ components:
         id: { type: integer }
         state: { type: string, enum: [queued, running, done, partial, failed, cancelled] }
         source: { type: string, enum: [api, schedule, button] }
+        profile: { type: integer, enum: [1, 2], description: Whose pills }
         request_id: { type: string }
         items: { type: array, items: { $ref: '#/components/schemas/Item' } }
         error: { type: string }
@@ -55,6 +59,7 @@ components:
         count: { type: integer, description: Pills left, -1 = not tracked }
         low: { type: integer, description: Low-stock threshold }
         enabled: { type: boolean }
+        profile: { type: integer, enum: [0, 1, 2], default: 0, description: "0 = shared. 1 or 2 = reserved: only doses of that profile may use the slot. Refused (409) while a schedule of the other profile uses it." }
         low_stock: { type: boolean, readOnly: true }
     Schedule:
       type: object
@@ -68,7 +73,16 @@ components:
           type: string
           enum: [auto, confirm]
           default: auto
-          description: auto = dispense at that time. confirm = raise a dose_due event and wait for the button or POST /schedules/{id}/run.
+          description: >
+            auto = dispense at that time, unless the pills that went into the cup last were for the other profile: then
+            the dose waits like a confirm dose (dose_due, message ending in "cup may hold other pills"), so that two
+            people's pills never share the cup unseen. confirm = raise a dose_due event and wait for the button of the
+            schedule's profile or POST /schedules/{id}/run.
+        profile:
+          type: integer
+          enum: [1, 2]
+          default: 1
+          description: Whose dose. Profile 1's button is on the right, profile 2's on the left. Every slot of the schedule must be shared or reserved for this profile (400 otherwise).
         label: { type: string, maxLength: 23 }
         items: { type: array, maxItems: 8, items: { $ref: '#/components/schemas/Item' } }
         last_run: { type: integer, readOnly: true, description: yyyymmdd of the last run }
@@ -81,7 +95,8 @@ components:
           type: string
           description: >
             boot, homed, resync, moved, job_started, job_done, job_partial, job_failed, slot_empty, double, low_stock,
-            chute_blocked, dose_due, dose_started, dose_missed, button, stop, error.
+            chute_blocked, dose_due, dose_started, dose_missed, button, stop, error. button = a button was pressed while
+            no dose of its profile was due.
             Every arrival at a slot is checked against that slot's index flag. resync = the arrival did not match:
             either the position was corrected (message "slot reached N steps off, corrected") or the carousel homes
             again (message ends in "homing again"); no stroke happens until the slot is confirmed. moved = the index
@@ -89,16 +104,20 @@ components:
         message: { type: string }
         slot: { type: integer }
         job_id: { type: integer }
+        profile: { type: integer, description: 1 or 2 if the event concerns one profile's dose or job }
 paths:
   /status:
     get:
       summary: Device state
       responses:
         '200':
-          description: state is one of boot, idle, homing, moving, dispensing, error
+          description: >
+            state is one of boot, idle, homing, moving, dispensing, error. due lists the schedules waiting for a button,
+            due_doses the same with their profile and since when; cup_profile is the profile whose pills went into the
+            cup last (0 = none yet).
           content:
             application/json:
-              example: { device: pilldispenser, firmware: 0.3.0, state: idle, homed: true, slot_at_station: 3, position_confirmed: true, current_job: 0, error: "", slots: 10, time: 1794400000, uptime_s: 532, last_event_seq: 17, due: [], wifi: { ssid: home, ip: 192.168.1.50, rssi: -58 } }
+              example: { device: pilldispenser, firmware: 0.3.0, state: idle, homed: true, slot_at_station: 3, position_confirmed: true, current_job: 0, error: "", slots: 10, time: 1794400000, uptime_s: 532, last_event_seq: 17, due: [4], due_doses: [ { schedule: 4, profile: 2, since: 1794399700 } ], cup_profile: 1, wifi: { ssid: home, ip: 192.168.1.50, rssi: -58 } }
   /slots:
     get:
       summary: All slots
@@ -108,22 +127,23 @@ paths:
     get: { summary: One slot, responses: { '200': { description: Slot } } }
     put:
       summary: Name a slot, set its stock after refilling, enable / disable it
-      requestBody: { content: { application/json: { schema: { $ref: '#/components/schemas/Slot' }, example: { name: "Magnesium 400", roller: L_cap00, count: 60, low: 8 } } } }
-      responses: { '200': { description: Slot } }
+      requestBody: { content: { application/json: { schema: { $ref: '#/components/schemas/Slot' }, example: { name: "Magnesium 400", roller: L_cap00, count: 60, low: 8, profile: 2 } } } }
+      responses: { '200': { description: Slot }, '409': { description: A schedule of the other profile uses this slot } }
   /dispense:
     post:
       summary: Dispense now
       description: >
         Queues a job and returns at once (202). Poll /jobs/{id} or wait for the job_done / job_partial / job_failed event.
         Send a unique request_id: repeating a request with the same id returns the existing job (200) instead of dispensing twice.
+        profile (1 or 2) says whose pills they are; without it, the owner of the reserved slots, or 1 if all are shared.
       requestBody:
         content:
           application/json:
-            example: { request_id: "7c1e-morning-2026-11-12", items: [ { slot: 1, count: 1 }, { slot: 5, count: 2 } ] }
+            example: { request_id: "7c1e-morning-2026-11-12", profile: 1, items: [ { slot: 1, count: 1 }, { slot: 5, count: 2 } ] }
       responses:
         '202': { description: Job queued, content: { application/json: { schema: { $ref: '#/components/schemas/Job' } } } }
         '200': { description: Same request_id seen before - existing job returned }
-        '400': { description: Bad request (slot / count out of range, slot disabled) }
+        '400': { description: Bad request (slot / count out of range, slot disabled, slot reserved for the other profile) }
         '503': { description: Job queue full }
   /jobs:
     get: { summary: Recent jobs (newest first, kept in RAM), responses: { '200': { description: "{ jobs: [Job] }" } } }
@@ -146,7 +166,7 @@ paths:
     get: { summary: All schedules, responses: { '200': { description: "{ schedules: [Schedule] }" } } }
     post:
       summary: Add a schedule (max 16)
-      requestBody: { content: { application/json: { schema: { $ref: '#/components/schemas/Schedule' }, example: { time: "07:30", days: [1, 2, 3, 4, 5], mode: confirm, label: morning, items: [ { slot: 1, count: 1 }, { slot: 2, count: 1 } ] } } } }
+      requestBody: { content: { application/json: { schema: { $ref: '#/components/schemas/Schedule' }, example: { time: "07:30", days: [1, 2, 3, 4, 5], mode: confirm, profile: 1, label: morning, items: [ { slot: 1, count: 1 }, { slot: 2, count: 1 } ] } } } }
       responses: { '201': { description: Schedule } }
   /schedules/{id}:
     parameters: [ { name: id, in: path, required: true, schema: { type: integer } } ]
@@ -154,7 +174,7 @@ paths:
     delete: { summary: Delete a schedule, responses: { '200': { description: ok } } }
   /schedules/{id}/run:
     parameters: [ { name: id, in: path, required: true, schema: { type: integer } } ]
-    post: { summary: Dispense this schedule now (also confirms a due dose), responses: { '202': { description: Job } } }
+    post: { summary: Dispense this schedule now (also confirms a due dose), responses: { '202': { description: Job }, '409': { description: A slot of the schedule is reserved for the other profile now - nothing dispensed } } }
   /present:
     post:
       summary: Turn a slot to the refill position
@@ -171,7 +191,8 @@ paths:
       description: >
         hostname, api_key, tz (POSIX TZ string), webhook_url, car_dir (1 / -1), home_offset, backlash, step_us_cruise,
         step_us_start, accel_steps, servo_park_us, servo_end_us, servo_over_us, servo_dps, rock_deg, beam_required,
-        retries, max_per_item, refill_slots, due_timeout_min, rehome_jobs, buzzer.
+        retries, max_per_item, refill_slots, due_timeout_min, rehome_jobs, buzzer, profile_names (two names of up to 15
+        characters, e.g. ["Anna", "Ben"]; null keeps a name).
       responses: { '200': { description: Settings object } }
   /diag:
     get: { summary: "Sensor self-test and raw values for setup. beam_ok is true when the receiver in the chute follows its emitter being switched off and on; beam_level_lit / beam_level_dark are the two levels found; home_level is the raw level of the index light barrier under the carousel, home_active whether a flag is in it, flag_level the level a flag gives (found by homing); index_flags_deg the ten flag widths measured by the last homing, slot 1 first (about 24-27, then about 12-15 each: the beam has a width, so a flag reads a little wider than it is); position_confirmed whether the slot at the station was confirmed by its flag; also servo_us, position_steps, steps_per_slot.", responses: { '200': { description: Diagnostics } } }

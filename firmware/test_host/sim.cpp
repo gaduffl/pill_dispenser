@@ -118,7 +118,7 @@ int digitalRead(int pin) {
     if (rxUnplugged) return HIGH;        // open input, pulled up
     bool pill = false;
     for (int i = 0; i < nBlock; i++) if (fakeMs >= blockFrom[i] && fakeMs < blockTo[i]) pill = true;
-    bool light = pins[D4] == HIGH && !txUnplugged && !pill;
+    bool light = pins[PIN_BEAM_LED] == HIGH && !txUnplugged && !pill;
     return (light != dropInv) ? HIGH : LOW;
   }
   return HIGH;
@@ -163,6 +163,7 @@ static void tickPeriodic(uint32_t ms) {
 
 #include "state.h"
 #include "motion.h"
+#include "doses.h"
 
 // ---------------------------------------------------------------- test helpers
 static int bad = 0;
@@ -173,6 +174,14 @@ static int eventsSince(uint32_t seq, const char *type, const char *text = nullpt
   for (uint32_t s = seq + 1; s <= eventSeq; s++) {
     const Event &e = events[(s - 1) % MAX_EVENTS];
     if (e.seq == s && !strcmp(e.type, type) && (!text || strstr(e.msg, text))) n++;
+  }
+  return n;
+}
+static int eventsFor(uint32_t seq, const char *type, uint8_t profile, const char *text = nullptr) {
+  int n = 0;
+  for (uint32_t s = seq + 1; s <= eventSeq; s++) {
+    const Event &e = events[(s - 1) % MAX_EVENTS];
+    if (e.seq == s && !strcmp(e.type, type) && e.profile == profile && (!text || strstr(e.msg, text))) n++;
   }
   return n;
 }
@@ -453,6 +462,101 @@ int main() {
   printf("   8) blind mode switched on by the user: state=%s dispensed=%d,%d strokes=%d\n", JOB_STATE_NAME[j->state], j->items[0].dispensed, j->items[1].dispensed, strokes);
   expect(j->state == JOB_DONE && strokes == 3, "blind mode");
   rxUnplugged = false; cfg.beam_required = true;
+
+  printf("M) two people: reserved slots, one button each, never one person's pills on the other's\n");
+  {
+    reset();
+    motion::homeAndPark();
+    for (auto &sl : slots) { sl.profile = 0; sl.count = 50; sl.enabled = true; }
+    slots[0].profile = 1; slots[1].profile = 2;             // slot 1 reserved for profile 1, slot 2 for profile 2, 3 shared
+    Item a1[1] = {{0, 1, 0, 0}}, b2[1] = {{1, 1, 0, 0}}, s3[1] = {{2, 1, 0, 0}}, mix[2] = {{0, 1, 0, 0}, {1, 1, 0, 0}};
+    uint8_t p = 0;
+    bool okA = itemsProfile(a1, 1, p).length() == 0 && p == 1;
+    p = 0; bool okB = itemsProfile(b2, 1, p).length() == 0 && p == 2;
+    p = 0; bool okS = itemsProfile(s3, 1, p).length() == 0 && p == 1;
+    p = 2; bool okS2 = itemsProfile(s3, 1, p).length() == 0 && p == 2;
+    p = 1; String eOther = itemsProfile(b2, 1, p);
+    p = 0; String eMix = itemsProfile(mix, 2, p);
+    printf("   dose from slot 1 -> profile %s, slot 2 -> %s, shared slot 3 -> %s / %s for profile 2\n", okA ? "1" : "??",
+           okB ? "2" : "??", okS ? "1" : "??", okS2 ? "2" : "??");
+    printf("   profile 1 asking for slot 2: '%s'; one dose from slots 1 and 2: '%s'\n", eOther.c_str(), eMix.c_str());
+    expect(okA && okB && okS && okS2, "profile taken from reserved / shared slots");
+    expect(eOther.length() > 0 && eMix.length() > 0, "a reserved slot is refused to the other profile");
+
+    for (auto &sc : schedules) sc = Schedule();
+    for (auto &dl : dueList) dl = 0;
+    Schedule &A = schedules[0], &B = schedules[1], &C = schedules[2];
+    A.used = B.used = C.used = true;
+    A.id = 1; B.id = 2; C.id = 3;
+    A.profile = 1; B.profile = 2; C.profile = 2;
+    C.confirm = true;                                        // A and B are auto doses
+    A.n = B.n = C.n = 1;
+    A.items[0] = a1[0]; B.items[0] = b2[0]; C.items[0] = s3[0];
+    cupProfile = 0;
+    pillsPerStroke = 1;
+    motion::state = motion::M_IDLE;
+    uint32_t t = 1800000000;
+    auto runNext = []() -> Job * { Job *j = motion::nextQueued(); if (j) motion::runJob(*j); return j; };
+    auto isDue = [](uint16_t id) { for (auto x : dueList) if (x == id) return true; return false; };
+
+    m0 = mark();
+    fireSchedule(A, t);
+    Job *j = runNext();
+    printf("   1) auto dose of profile 1, cup empty: %s, cup now holds profile %u's pills\n",
+           j ? JOB_STATE_NAME[j->state] : "nothing queued", (unsigned)cupProfile);
+    expect(j && j->profile == 1 && j->state == JOB_DONE && cupProfile == 1 && eventsFor(m0, "dose_started", 1) == 1, "auto dose 1");
+
+    m0 = mark();
+    fireSchedule(B, t += 60);
+    j = runNext();
+    printf("   2) auto dose of profile 2 right after: %s, waits for button 2: %s\n", j ? "DISPENSED" : "not dispensed",
+           isDue(2) ? "yes" : "no");
+    expect(!j && isDue(2) && eventsFor(m0, "dose_due", 2, "cup") == 1, "auto dose of the other profile waits");
+
+    m0 = mark();
+    uint32_t id1 = pressButton(1);
+    printf("   3) button 1 pressed: %s\n", id1 ? "DISPENSED" : "nothing due for profile 1");
+    expect(!id1 && eventsFor(m0, "button", 1) == 1 && isDue(2), "button 1 does not release profile 2's dose");
+
+    uint32_t id2 = pressButton(2);
+    j = runNext();
+    printf("   4) button 2 pressed: job %s for profile %u, cup now holds profile %u's pills\n", j ? JOB_STATE_NAME[j->state] : "-",
+           j ? (unsigned)j->profile : 0, (unsigned)cupProfile);
+    expect(id2 && j && j->id == id2 && j->profile == 2 && j->state == JOB_DONE && cupProfile == 2 && !isDue(2), "button 2");
+
+    fireSchedule(A, t += 60);
+    uint32_t id0 = pressButton(0);
+    j = runNext();
+    printf("   5) only one button fitted: profile 1's held dose released by it: %s\n", j && j->id == id0 && j->profile == 1 ? "yes" : "NO");
+    expect(j && j->id == id0 && j->profile == 1 && cupProfile == 1, "single button serves both profiles");
+
+    fireSchedule(C, t += 60);                                // confirm dose of profile 2, then its held auto dose
+    fireSchedule(B, t += 60);
+    uint32_t first = pressButton(2);
+    j = runNext();
+    bool oldestFirst = j && j->id == first && j->items[0].slot == 2;
+    uint32_t second = pressButton(2);
+    j = runNext();
+    printf("   6) two doses waiting for profile 2: one per press, oldest first: %s\n", oldestFirst && j && j->id == second && j->items[0].slot == 1 ? "yes" : "NO");
+    expect(oldestFirst && j && j->id == second && j->items[0].slot == 1, "one dose per press, oldest first");
+
+    m0 = mark();
+    int before = strokes;
+    slots[1].profile = 1;                                    // slot 2 reserved for profile 1 after B was planned
+    fireSchedule(B, t += 60);
+    j = runNext();
+    printf("   7) slot reserved for the other profile after the plan was made: %s, '%s'\n", j ? "DISPENSED" : "refused",
+           eventsFor(m0, "error", 2) ? events[(eventSeq - 1) % MAX_EVENTS].msg : "");
+    expect(!j && strokes == before && eventsFor(m0, "error", 2, "reserved") == 1, "plan using a slot now reserved for the other profile");
+    slots[1].profile = 2;
+
+    m0 = mark();
+    fireSchedule(C, t += 60);
+    expireDue(t + (uint32_t)cfg.due_timeout_min * 60 + 1);
+    printf("   8) dose not confirmed in time: %s\n", eventsFor(m0, "dose_missed", 2) == 1 && !isDue(3) ? "dose_missed for profile 2" : "NOT REPORTED");
+    expect(eventsFor(m0, "dose_missed", 2) == 1 && !isDue(3), "missed dose names its profile");
+    for (auto &sl : slots) sl.profile = 0;
+  }
 
   printf("\nwrong-module strokes in all tests: %d\n", wrongStrokes);
   printf("strokes more than 1 deg off: %d (worst %.2f deg)\n", offStrokes, worstOff);

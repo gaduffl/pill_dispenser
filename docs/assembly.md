@@ -56,7 +56,7 @@ side cutters, double-sided foam tape, and tape or stick-on cable clips for the w
 | Electrolytic capacitor 470 uF, 16 V or more | 8 |
 | Jumper wires: 6 short male-male (links on the board), 6 female-male (ULN2003), 3 male-male (servo) | 8 |
 | USB-C power supply 5 V / 3 A | 11 |
-| Optional: 12 mm panel push button with leads, active buzzer for 3.3 V (30 mA or less), 1 short link and 2 jumpers each | 8 |
+| Optional: one or two 12 mm panel push buttons with leads (one per person), active buzzer for 3.3 V (30 mA or less), 1 short link and 2 jumpers each | 8 |
 
 ## 3. Carousel
 
@@ -146,7 +146,7 @@ chute wires a landing place they can reach:
 | 10e | 10f | column 10, left half: GND as well |
 | 3i | 11f | column 11, right half: 3.3 V |
 | 12b | 1a | column 12, left half: D0 |
-| 13b | 5a | column 13, left half: D4 |
+| 13b | 7a | column 13, left half: D6 |
 
 **Capacitor**, 470 uF: long leg (+) into 1j, short leg (-, the side with the stripe) into 2j. Bend it so that
 the body lies flat along the outside of the breadboard, pointing towards the front and not towards the wall. It
@@ -190,32 +190,37 @@ board. Some servos have yellow, red and black wires instead.
 | receiver, white | 12a | D0, through the link 12b-1a |
 | receiver, red | 11i | 3.3 V |
 | receiver, black | 10c | GND |
-| emitter, red | 13a | D4, through the link 13b-5a |
+| emitter, red | 13a | D6, through the link 13b-7a |
 | emitter, black | 10d | GND |
 
-The emitter in the chute runs from pin D4 on purpose. Before every stroke the firmware switches it off and on and
+The emitter in the chute runs from pin D6 on purpose. Before every stroke the firmware switches it off and on and
 checks that the receiver follows. A loose plug, two halves that do not face each other, or a pill lying in the
-chute are noticed before a pill is released. The receivers use the pull-ups inside the XIAO, so no resistors are
-needed.
+chute are noticed before a pill is released. D6 is also the serial transmit pin and chatters while the XIAO
+starts; for the emitter that only means a short flicker. The receivers use the pull-ups inside the XIAO, so no
+resistors are needed.
 
-**Optional: button and buzzer.** First one more link, 10j to 14f: column 14, right half, becomes GND.
+**Optional: buttons and buzzer.** First one more link, 10j to 14f: column 14, right half, becomes GND.
 
 | Part | Hole | Connects to |
 |---|---|---|
-| button, one wire | 3a | D2 |
-| button, other wire | 14g | GND |
+| button 1 (profile 1), one wire | 3a | D2 |
+| button 1, other wire | 14g | GND |
+| button 2 (profile 2), one wire | 5a | D4 |
+| button 2, other wire | 14i | GND |
 | buzzer + | 6a | D5 |
 | buzzer - | 14h | GND |
 
-The button goes into the 12 mm hole in the right-hand side wall, nut inside. If its leads do not reach the board,
-extend each with a jumper. The buzzer is driven straight from a pin, which the firmware sets to its strongest
-drive: use an active buzzer for 3.3 V that draws 30 mA or less, with a female-male jumper on each leg. Leave D6
-(7a, 7b) free: it is the serial transmit pin and chatters while the XIAO boots.
+Button 1 goes into the 12 mm hole in the right-hand side wall, button 2 into the one in the left-hand side wall,
+nut inside. Each button releases the doses of its own profile, so two people sharing the dispenser get one each
+(section 12). One person needs only button 1. For two people with a single button, set `PIN_BUTTON2` to -1 in
+`firmware/pilldispenser/config.h`: button 1 then releases the doses of both. If a button's leads do not reach the
+board, extend each with a jumper. The buzzer is driven straight from a pin, which the firmware sets to its
+strongest drive: use an active buzzer for 3.3 V that draws 30 mA or less, with a female-male jumper on each leg.
 
-**Lay the wires** flat on the floor, as in the layout drawing: the servo, stepper driver and button wires on
-the right, the light barrier wires on the left. Wires may pass under the stepper. Tape them down every few
-centimetres. Near the centre the index flags come down to 36 mm above the floor and elsewhere the carousel's
-ribs to about 68 mm, so no loop of wire may stand up.
+**Lay the wires** flat on the floor, as in the layout drawing: the servo, stepper driver and button 1 wires on
+the right, the light barrier and button 2 wires on the left. Wires may pass under the stepper. Tape them down
+every few centimetres. Near the centre the index flags come down to 36 mm above the floor and elsewhere the
+carousel's ribs to about 68 mm, so no loop of wire may stand up.
 
 Every hole in use, for checking:
 
@@ -223,17 +228,17 @@ Every hole in use, for checking:
 |---|---|---|
 | 1 | a: link from 12b; c: XIAO D0 | g: XIAO 5V; i: link to 9f; j: capacitor + |
 | 2 | a: index receiver white; c: XIAO D1 | g: XIAO GND; i: link to 10g; j: capacitor - |
-| 3 | a: button (opt.); c: XIAO D2 | g: XIAO 3V3; i: link to 11f |
+| 3 | a: button 1 (opt.); c: XIAO D2 | g: XIAO 3V3; i: link to 11f |
 | 4 | a: servo orange; c: XIAO D3 | g: XIAO D10; j: ULN2003 IN4 |
-| 5 | a: link from 13b; c: XIAO D4 | g: XIAO D9; j: ULN2003 IN3 |
+| 5 | a: button 2 (opt.); c: XIAO D4 | g: XIAO D9; j: ULN2003 IN3 |
 | 6 | a: buzzer + (opt.); c: XIAO D5 | g: XIAO D8; j: ULN2003 IN2 |
-| 7 | c: XIAO D6, not used | g: XIAO D7; j: ULN2003 IN1 |
+| 7 | a: link from 13b; c: XIAO D6 | g: XIAO D7; j: ULN2003 IN1 |
 | 9 | - | f: link from 1i; g: ULN2003 +; h: servo red |
 | 10 | a to d: black wires of the four light barrier halves; e: link to 10f | f: link from 10e; g: link from 2i; h: ULN2003 -; i: servo brown; j: link to 14f (opt.) |
 | 11 | - | f: link from 3i; g, h, i: red wires of the index receiver, index emitter, drop receiver |
 | 12 | a: drop receiver white; b: link to 1a | - |
-| 13 | a: drop emitter red; b: link to 5a | - |
-| 14 | - | f: link from 10j; g: button; h: buzzer - (all optional) |
+| 13 | a: drop emitter red; b: link to 7a | - |
+| 14 | - | f: link from 10j; g: button 1; h: buzzer -; i: button 2 (all optional) |
 
 The holes right next to the XIAO (rows b and h, columns 1 to 8) touch the edge of its board. The plan leaves
 them free.
@@ -314,6 +319,12 @@ leave it out for brevity, and assume `H=http://pilldispenser.local/api/v1` and `
    roller's tooth and must not touch the module. Shift the tower in its slots, then tighten the 4 screws.
 6. **Try it.** Put a few pills into module 1, then
    `curl -X POST $H/dispense -H "$J" -d '{"items":[{"slot":1,"count":1}]}'`.
+7. **Two people (optional).** Name the two profiles and, if you like, reserve each person's modules for them, so
+   that one person's plan cannot take the other's pills:
+   `curl -X PUT $H/settings -H "$J" -d '{"profile_names":["Anna","Ben"]}'` and
+   `curl -X PUT $H/slots/4 -H "$J" -d '{"profile":2}'` (0 = shared). Every schedule then names its `profile`
+   (1 or 2). Press each button once: `curl "$H/events?limit=2"` shows two `button` events, the right-hand
+   button's with `"profile": 1` and the left-hand one's with `"profile": 2`.
 
 ## 13. Modules
 
@@ -347,8 +358,10 @@ During operation (`GET /events`):
 | `resync` | A slot was reached a few steps off and corrected, or the flags disagreed with the step count and the carousel homed again. Now and then is normal. Often means friction or a slipping pinion. |
 | `moved` | The carousel was turned while it stood still, by hand or by a slipping gear. It homes before the next move. |
 | job error `carousel position not confirmed by the index flags` | Four tries in a row did not confirm the slot. The dispenser stops rather than dispense from the wrong module. Check the index light barrier and the flags. |
-| `drop light barrier failed its test - plugs? chute blocked?` | The chute's receiver did not follow its emitter: plugs in 12a and 13a, the links 12b-1a and 13b-5a, or something in the chute. |
+| `drop light barrier failed its test - plugs? chute blocked?` | The chute's receiver did not follow its emitter: plugs in 12a and 13a, the links 12b-1a and 13b-7a, or something in the chute. |
 | The XIAO restarts when the servo starts | Capacitor missing or the wrong way round, or a weak supply or cable. Use a 5 V / 3 A supply with a fixed cable. |
+| A button press leaves neither a `button` nor a `job_started` event | Its wires: 3a and 14g for button 1, 5a and 14i for button 2, and the link 10j-14f. |
+| `dose_due` for an `auto` dose, message ending in `cup may hold other pills` | The pills that went into the cup last were for the other profile. The dose waits for its own button, so that two people's pills never land in the cup together. |
 
 Steps lost in the last few degrees of a move cannot be measured, because the flag's edge has already passed. The
 right module is still at the station and the next move corrects the position.

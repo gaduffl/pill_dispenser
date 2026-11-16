@@ -10,8 +10,8 @@ pill path) and the firmware logic was exercised in a host simulation, but nothin
 or run on real hardware. Expect a tuning round. See [What was checked](#what-was-checked).
 
 New in 0.3: an index flag for every slot, so the firmware confirms which module stands at the station
-before the servo moves; USB-C socket at the back; pockets for the breadboard and the driver board; a
-step-by-step [assembly and wiring guide](docs/assembly.md).
+before the servo moves; two user profiles with a button each; USB-C socket at the back; pockets for the
+breadboard and the driver board; a step-by-step [assembly and wiring guide](docs/assembly.md).
 
 ![overview](docs/img/overview.png)
 
@@ -65,7 +65,7 @@ Electronics. Everything plugs into a small breadboard, no soldering:
 | 1 | Electrolytic capacitor 470 uF, 16 V or more | across 5 V and GND, keeps the servo's start from resetting the ESP32 |
 | 1 set | Jumper wires, male-male and female-male | 9 male-male (6 short ones for links on the board, 3 to extend the servo cable), 6 female-male |
 | 1 | USB-C cable and 5 V supply, 3 A recommended | powers everything; plugs in at the back |
-| opt. | 12 mm panel push button with leads, active buzzer for 3.3 V (30 mA or less) | button for `confirm` mode, buzzer for reminders |
+| opt. | one or two 12 mm panel push buttons with leads, active buzzer for 3.3 V (30 mA or less) | a button per person (right: profile 1, left: profile 2) releases that person's due doses; the buzzer beeps once when a dose is done, three times when it had a problem |
 
 No resistors: the receivers of the light barriers work with the pull-ups inside the ESP32.
 
@@ -145,18 +145,19 @@ free columns of the breadboard serve as rails for 5 V, 3.3 V and GND. The
 | 3V3 | red wire of both receivers (the halves with three wires), red wire of the index emitter |
 | D0 | signal wire (white) of the receiver in the chute |
 | D1 | signal wire (white) of the receiver under the carousel |
-| D2 | optional button to GND |
+| D2 | optional button 1 (profile 1, right-hand wall) to GND |
 | D3 | servo orange (signal) |
-| D4 | red wire of the emitter in the chute |
+| D4 | optional button 2 (profile 2, left-hand wall) to GND |
 | D5 | optional buzzer `+` |
-| D6 | not used: it is the UART TX pin and chatters while the board boots |
+| D6 | red wire of the emitter in the chute |
 | D7, D8, D9, D10 | ULN2003 IN1, IN2, IN3, IN4 |
 
-The emitter in the chute is fed from D4 on purpose. Before every stroke the firmware switches it
+The emitter in the chute is fed from D6 on purpose. Before every stroke the firmware switches it
 off and on and checks that the receiver follows. A loose plug, two halves that do not face each
 other, or a pill lying in the chute are noticed before a pill is released, not after. The same test
 tells the firmware which level means "blocked", so it does not matter which way round a particular
-light barrier switches. An emitter draws about 10 mA at 3.3 V, which a pin can supply.
+light barrier switches. An emitter draws about 10 mA at 3.3 V, which a pin can supply. D6 is also the
+UART transmit pin and chatters while the board starts; for the emitter that is a harmless flicker.
 
 The 470 uF capacitor across 5 V and GND is part of the build: without it, the servo's starting
 current can reset the ESP32.
@@ -220,14 +221,14 @@ Full description: [`docs/openapi.yaml`](docs/openapi.yaml). The essentials:
 | Call | Does |
 |---|---|
 | `GET /api/v1/status` | state, slot at the station (and whether its flag confirmed it), error, Wi-Fi |
-| `GET /api/v1/slots`, `PUT /api/v1/slots/3` | names, stock (`count`), low-stock threshold |
+| `GET /api/v1/slots`, `PUT /api/v1/slots/3` | names, stock (`count`), low-stock threshold, reserved for a profile |
 | `POST /api/v1/dispense` | `{"request_id":"...","items":[{"slot":1,"count":2}]}` - returns a job at once |
 | `GET /api/v1/jobs/17` | progress: per item `dispensed` and `missed` |
 | `GET /api/v1/events?since=42` | everything that happened: job_done, slot_empty, low_stock, double, resync, moved, ... |
-| `GET/POST/PUT/DELETE /api/v1/schedules` | dose times stored on the device, `auto` or `confirm` mode |
+| `GET/POST/PUT/DELETE /api/v1/schedules` | dose times stored on the device, per profile, `auto` or `confirm` mode |
 | `POST /api/v1/present` | `{"slot":4}` turns a module to the refill position |
 | `POST /api/v1/stop`, `POST /api/v1/home` | stop everything; re-home |
-| `GET/PUT /api/v1/settings` | time zone, API key, webhook, motion tuning |
+| `GET/PUT /api/v1/settings` | time zone, API key, webhook, profile names, motion tuning |
 | `GET /api/v1/diag` | sensor self-test and raw levels, for setup |
 
 Connecting an app:
@@ -237,8 +238,15 @@ Connecting an app:
 - **Dose now:** `POST /dispense` with a unique `request_id`. Repeating the same id never dispenses
   twice, so the app can retry safely on a flaky connection.
 - **Dose plan on the device:** push `/schedules`; the dispenser keeps time by NTP and works without
-  the app. In `confirm` mode it only announces the dose (`dose_due`) and waits for the button or
-  `POST /schedules/{id}/run`.
+  the app. In `confirm` mode it only announces the dose (`dose_due`) and waits for the button of the
+  dose's profile or `POST /schedules/{id}/run`.
+- **Two people:** every schedule and job belongs to profile 1 or 2 (`profile_names` in `/settings`
+  gives them names), and a slot can be reserved for one of them (`PUT /slots/4` with `{"profile":2}`),
+  so one person's plan cannot take the other's pills. The right-hand button releases profile 1's due
+  doses, the left-hand one profile 2's. Events name the `profile` they concern. There is one cup, and
+  the dispenser knows whose pills went into it last but not whether they were taken. So an `auto`
+  dose only drops on its own if the last pills in the cup were for the same person; otherwise it
+  waits for that person's button like a `confirm` dose.
 - **What really happened:** poll `/events?since=<last seq>` or set `webhook_url`; the device then
   POSTs each relevant event as JSON to the app's backend. `dispensed` is what the light barrier
   counted, not what was requested.
@@ -272,7 +280,7 @@ Done in CAD (`cad/checks.py`, `cad/func.py`):
 - each of the ten index flags blocks the light barrier while its slot is at the station (from 8.5
   degrees before to 7 after), slot 1's flag is the only wide one, and the light barrier is free
   between the flags;
-- the breadboard with the XIAO, the ULN2003 board and the optional button fit their places without
+- the breadboard with the XIAO, the ULN2003 board and the two optional buttons fit their places without
   touching the tub, the stepper or the turning carousel; a USB-C plug grip of up to 15.4 x 11.3 mm
   passes the opening in the back wall;
 - all 20 STL files are closed meshes.
@@ -289,7 +297,11 @@ the carousel that includes gear backlash, slipping and stalling:
   that is off by a whole slot. Each is caught: the job fails with no stroke, or the carousel homes
   again and the job completes;
 - job handling with an empty module, repeated request id, two pills in one stroke, unplugged receiver,
-  unplugged emitter.
+  unplugged emitter;
+- two profiles: a reserved slot refused to the other profile, each button releasing only its own
+  profile's doses (one per press, oldest first), an `auto` dose waiting while the cup may hold the
+  other person's pills, a single button serving both, and a plan that uses a slot reserved for the
+  other profile since: refused, nothing dispensed.
 
 In all of it, no stroke was made at the wrong module, and every stroke of the simulated jobs happened
 within 0.25 degrees of the station. The one case the flags cannot measure is listed below.
@@ -320,7 +332,9 @@ Not done, and where I expect tuning:
 ## Safety
 
 This is a hobby device, not a medical product. It can miscount. For medication where a missed or
-doubled dose matters, check the cup. Keep it away from children, and keep light- or
+doubled dose matters, check the cup. When two people share it, take your pills out of the cup before
+the other person presses their button: the dispenser cannot see whether the cup is empty. Keep it
+away from children, and keep light- or
 moisture-sensitive medication in its original packaging.
 
 ## Repository layout

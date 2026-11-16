@@ -547,7 +547,8 @@ static int stroke(int attempt) {
 }
 
 // ------------------------------------------------------------------ jobs
-static uint32_t enqueueJob(const Item *items, uint8_t n, const char *source, const char *requestId, bool *existing = nullptr) {
+static uint32_t enqueueJob(const Item *items, uint8_t n, const char *source, const char *requestId, bool *existing = nullptr,
+                           uint8_t profile = 1) {
   Lock l;
   if (existing) *existing = false;
   if (requestId && requestId[0]) {
@@ -568,6 +569,7 @@ static uint32_t enqueueJob(const Item *items, uint8_t n, const char *source, con
   for (uint8_t i = 0; i < n; i++) { slot->items[i] = items[i]; slot->items[i].dispensed = 0; slot->items[i].missed = 0; }
   copyStr(slot->source, sizeof(slot->source), source);
   copyStr(slot->request_id, sizeof(slot->request_id), requestId);
+  slot->profile = profile;
   slot->t_created = nowUnix();
   return slot->id;
 }
@@ -645,6 +647,7 @@ static void runJob(Job &j) {
     else if (abortFlag && !any) { j.state = JOB_CANCELLED; copyStr(j.error, sizeof(j.error), "stopped"); }
     else { j.state = JOB_PARTIAL; copyStr(j.error, sizeof(j.error), abortFlag ? "stopped" : "one or more slots empty or jammed"); }
     j.t_done = nowUnix();
+    if (any) cupProfile = j.profile;           // saved with the counts below
   }
   addEvent(j.state == JOB_DONE ? "job_done" : j.state == JOB_FAILED ? "job_failed" : "job_partial", j.error, -1, j.id);
   saveConfig();                                // remaining counts

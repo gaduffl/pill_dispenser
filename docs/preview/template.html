@@ -196,7 +196,7 @@ pre { margin: 0; padding: 12px 14px; background: var(--surface); border: 1px sol
       <li><a href="https://www.berrybase.de/bauelemente/prototyping/">Jumper wires, male-male and male-female</a></li>
       <li><a href="https://www.berrybase.de/elektrolytkondensator-470-f-25v-1050c-1-radial-tht">470 µF electrolytic capacitor, 16 V or more</a></li>
       <li><a href="https://www.berrybase.de/offizielles-raspberry-pi-usb-c-netzteil-5-1v-3-0a-eu-schwarz">USB-C supply 5.1 V / 3 A with fixed cable</a></li>
-      <li>Optional: <a href="https://www.berrybase.de/en/kksb-12mm-druckknopf-momentanschalter-mit-2.54mm-dupont-anschluessen-150mm-kabel">12 mm push button</a>, <a href="https://www.berrybase.de/signalgeber-oe12-0mm-3-7v-dc-2-3khz-85db">active buzzer for 3.3 V</a></li>
+      <li>Optional: <a href="https://www.berrybase.de/en/kksb-12mm-druckknopf-momentanschalter-mit-2.54mm-dupont-anschluessen-150mm-kabel">12 mm push buttons</a> (one per person), <a href="https://www.berrybase.de/signalgeber-oe12-0mm-3-7v-dc-2-3khz-85db">active buzzer for 3.3 V</a></li>
     </ul></div>
     <div class="card"><h3>Hardware</h3><ul>
       <li>Hex bolt M8 × 80, washer, self-locking nut (hardware store)</li>
@@ -218,12 +218,12 @@ pre { margin: 0; padding: 12px 14px; background: var(--surface); border: 1px sol
     <tr><td class="n">3V3</td><td>red wire of both receivers, red wire of the home emitter</td></tr>
     <tr><td class="n">D0</td><td>signal wire of the receiver in the chute</td></tr>
     <tr><td class="n">D1</td><td>signal wire of the receiver under the carousel</td></tr>
-    <tr><td class="n">D4</td><td>red wire of the emitter in the chute</td></tr>
+    <tr><td class="n">D6</td><td>red wire of the emitter in the chute</td></tr>
     <tr><td class="n">D3</td><td>servo orange</td></tr>
     <tr><td class="n">D7 D8 D9 D10</td><td>ULN2003 IN1 IN2 IN3 IN4</td></tr>
-    <tr><td class="n">D2, D5</td><td>optional button to GND, optional buzzer</td></tr>
+    <tr><td class="n">D2, D4, D5</td><td>optional buttons to GND (D2 right: profile 1, D4 left: profile 2), optional buzzer</td></tr>
   </table></div>
-  <p class="note">The emitter in the chute runs from pin D4 so the firmware can switch it off and on before every stroke. If the receiver does not follow, a plug is loose or the chute is blocked, and no pill is released.</p>
+  <p class="note">The emitter in the chute runs from pin D6 so the firmware can switch it off and on before every stroke. If the receiver does not follow, a plug is loose or the chute is blocked, and no pill is released.</p>
 </section>
 
 <section>
